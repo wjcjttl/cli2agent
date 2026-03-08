@@ -87,6 +87,26 @@ docker compose up
 WORKSPACE_PATH=/path/to/your/project docker compose up
 ```
 
+### 预构建镜像（ghcr.io）
+
+发布版本标签时会自动构建并发布多架构（`amd64`/`arm64`）镜像到 GitHub Container Registry：
+
+```bash
+docker pull ghcr.io/wjcjttl/cli2agent:latest
+
+# 或使用特定版本
+docker pull ghcr.io/wjcjttl/cli2agent:0.1.0
+```
+
+直接运行：
+
+```bash
+docker run -p 3000:3000 \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -v /path/to/project:/workspace:rw \
+  ghcr.io/wjcjttl/cli2agent:latest
+```
+
 ### 本地开发
 
 ```bash

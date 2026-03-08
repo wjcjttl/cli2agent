@@ -38,12 +38,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            # On semver tag push: tag as the version and as latest
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # On main branch push: tag as main and as sha-<short>
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
