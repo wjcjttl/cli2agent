@@ -60,7 +60,7 @@ export async function* iterateNdjsonStream(stream: Readable, adapter?: CliAdapte
         yield raw as CliEvent;
       }
     } catch {
-      logger.warn({ line: trimmed.slice(0, 200) }, 'ndjson.parse.error');
+      logger.debug({ line: trimmed.slice(0, 200) }, 'ndjson.parse.skip');
     }
   }
 }

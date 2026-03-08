@@ -66,11 +66,11 @@ export async function spawnCliProcess(options: CliSpawnOptions): Promise<CliProc
     }
   });
 
-  // Handle spawn errors (e.g. ENOENT)
+  // Handle spawn errors (e.g. ENOENT) — emit exit so downstream waitForExit resolves
   proc.on('error', (err) => {
     logger.error({ sessionId: options.sessionId, backend: adapter.name, err }, 'cli.spawn.error');
-    proc.stderr?.push(`${err.message}\n`);
-    proc.stdout?.push(null);
+    // Emit a synthetic exit event so waitForExit doesn't hang
+    proc.emit('exit', 1, null);
   });
 
   // Log process exit

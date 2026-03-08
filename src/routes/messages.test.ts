@@ -1,21 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { extractPrompt, mergeTextBlocks } from './messages.js';
 
-describe('extractPrompt', () => {
-  it('extracts string content from user messages', () => {
+describe('extractPrompt (no session — includes all roles)', () => {
+  it('includes both user and assistant messages with role tags', () => {
     const result = extractPrompt([
       { role: 'user', content: 'Hello' },
       { role: 'assistant', content: 'Hi' },
       { role: 'user', content: 'How are you?' },
     ]);
-    expect(result).toBe('Hello\n\nHow are you?');
+    expect(result).toBe('[User]: Hello\n\n[Assistant]: Hi\n\n[User]: How are you?');
   });
 
-  it('ignores assistant messages', () => {
+  it('includes assistant messages with role tag', () => {
     const result = extractPrompt([
       { role: 'assistant', content: 'I am an assistant' },
     ]);
-    expect(result).toBe('');
+    expect(result).toBe('[Assistant]: I am an assistant');
   });
 
   it('extracts text from array content blocks', () => {
@@ -28,7 +28,7 @@ describe('extractPrompt', () => {
         ],
       },
     ]);
-    expect(result).toBe('Part 1\n\nPart 2');
+    expect(result).toBe('[User]: Part 1\nPart 2');
   });
 
   it('skips non-text blocks in array content', () => {
@@ -41,7 +41,7 @@ describe('extractPrompt', () => {
         ],
       },
     ]);
-    expect(result).toBe('A question');
+    expect(result).toBe('[User]: A question');
   });
 
   it('handles empty messages array', () => {
@@ -49,7 +49,7 @@ describe('extractPrompt', () => {
   });
 
   it('handles single user message with string content', () => {
-    expect(extractPrompt([{ role: 'user', content: 'Just one message' }])).toBe('Just one message');
+    expect(extractPrompt([{ role: 'user', content: 'Just one message' }])).toBe('[User]: Just one message');
   });
 
   it('skips text blocks with empty text', () => {
@@ -62,7 +62,7 @@ describe('extractPrompt', () => {
         ],
       },
     ]);
-    expect(result).toBe('Non-empty');
+    expect(result).toBe('[User]: Non-empty');
   });
 
   it('handles mixed string and array content across messages', () => {
@@ -76,7 +76,39 @@ describe('extractPrompt', () => {
         ],
       },
     ]);
-    expect(result).toBe('First\n\nSecond');
+    expect(result).toBe('[User]: First\n\n[Assistant]: Response\n\n[User]: Second');
+  });
+});
+
+describe('extractPrompt (with session — last user message only)', () => {
+  it('returns only the last user message', () => {
+    const result = extractPrompt([
+      { role: 'user', content: 'First question' },
+      { role: 'assistant', content: 'First answer' },
+      { role: 'user', content: 'Follow-up' },
+    ], true);
+    expect(result).toBe('Follow-up');
+  });
+
+  it('returns empty string if no user messages', () => {
+    const result = extractPrompt([
+      { role: 'assistant', content: 'Hello' },
+    ], true);
+    expect(result).toBe('');
+  });
+
+  it('extracts text from array content in last user message', () => {
+    const result = extractPrompt([
+      { role: 'user', content: 'Old message' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Part A' },
+          { type: 'text', text: 'Part B' },
+        ],
+      },
+    ], true);
+    expect(result).toBe('Part A\nPart B');
   });
 });
 

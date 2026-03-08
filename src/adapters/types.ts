@@ -24,7 +24,11 @@ export interface CliAdapter {
   /** Human-readable name, e.g. "claude", "gemini", "codex" */
   readonly name: string;
 
-  /** Resolve the full path to the CLI binary. Throws if not found. */
+  /**
+   * Resolve the CLI binary path.
+   * Returns the full path when resolvable, otherwise falls back to the bare
+   * binary name (letting the OS PATH resolve it at spawn time).
+   */
   resolveBinary(): string;
 
   /** Build the CLI arguments array for a headless streaming execution. */

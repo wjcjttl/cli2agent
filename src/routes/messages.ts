@@ -20,31 +20,61 @@ function generateMessageId(): string {
 }
 
 /**
- * Extract a single prompt string from Anthropic Messages API messages array.
- * Concatenates all user messages. For assistant messages, they provide context
- * but are not sent as prompt (the CLI handles session history via --resume).
+ * Extract a prompt string from Anthropic Messages API messages array.
+ *
+ * For multi-turn conversations, use `metadata.session_id` to leverage CLI-side
+ * session history via --resume. Without a session, all messages are serialized
+ * with role tags so the CLI has full conversation context.
+ *
+ * When a session is active, only the last user message is sent (the CLI
+ * already has prior context from the session file).
  */
-export function extractPrompt(messages: Array<{ role: string; content: string | unknown[] }>): string {
-  const parts: string[] = [];
+export function extractPrompt(
+  messages: Array<{ role: string; content: string | unknown[] }>,
+  hasSession = false,
+): string {
+  if (hasSession) {
+    // With session resumption, only send the last user message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        return extractTextFromMessage(messages[i]);
+      }
+    }
+    return '';
+  }
 
+  // Without a session, serialize all messages with role tags for context
+  const parts: string[] = [];
   for (const msg of messages) {
-    if (msg.role === 'user') {
-      if (typeof msg.content === 'string') {
-        parts.push(msg.content);
-      } else if (Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (typeof block === 'object' && block !== null && 'type' in block) {
-            const b = block as { type: string; text?: string };
-            if (b.type === 'text' && b.text) {
-              parts.push(b.text);
-            }
-          }
-        }
+    const text = extractTextFromMessage(msg);
+    if (text) {
+      if (msg.role === 'user') {
+        parts.push(`[User]: ${text}`);
+      } else if (msg.role === 'assistant') {
+        parts.push(`[Assistant]: ${text}`);
       }
     }
   }
-
   return parts.join('\n\n');
+}
+
+function extractTextFromMessage(msg: { role: string; content: string | unknown[] }): string {
+  if (typeof msg.content === 'string') {
+    return msg.content;
+  }
+  if (Array.isArray(msg.content)) {
+    const texts: string[] = [];
+    for (const block of msg.content) {
+      if (typeof block === 'object' && block !== null && 'type' in block) {
+        const b = block as { type: string; text?: string };
+        if (b.type === 'text' && b.text) {
+          texts.push(b.text);
+        }
+      }
+    }
+    return texts.join('\n');
+  }
+  return '';
 }
 
 export function registerMessageRoutes(app: FastifyInstance, sessions: SessionManager): void {
@@ -64,6 +94,7 @@ Supports both streaming (SSE) and non-streaming modes.`,
       body: MessagesRequestSchema,
       response: {
         200: MessagesResponseSchema,
+        404: MessagesErrorResponseSchema,
         409: MessagesErrorResponseSchema,
         429: MessagesErrorResponseSchema,
         500: MessagesErrorResponseSchema,
@@ -76,8 +107,22 @@ Supports both streaming (SSE) and non-streaming modes.`,
       const stream = body.stream === true;
 
       // Extract session ID from metadata or create new
-      const sessionId = body.metadata?.session_id;
-      const session = sessions.getOrCreate(sessionId);
+      const requestedSessionId = body.metadata?.session_id;
+      const session = sessions.getOrCreate(requestedSessionId);
+
+      // If a session ID was provided but doesn't exist, getOrCreate returns a new one.
+      // Reject with 404 so clients get deterministic session_id behavior.
+      if (requestedSessionId && session.id !== requestedSessionId) {
+        return reply.status(404).send({
+          type: 'error' as const,
+          error: {
+            type: 'not_found',
+            message: `Session '${requestedSessionId}' does not exist.`,
+          },
+        });
+      }
+
+      const hasSession = !!requestedSessionId;
 
       logger.info({ messageId, sessionId: session.id, model, stream, messageCount: body.messages.length }, 'messages.start');
 
@@ -107,7 +152,7 @@ Supports both streaming (SSE) and non-streaming modes.`,
       }
 
       try {
-        const prompt = extractPrompt(body.messages);
+        const prompt = extractPrompt(body.messages, hasSession);
 
         const handle = await spawnCliProcess({
           prompt,
@@ -181,13 +226,17 @@ async function handleStreaming(
     if (!translator.isClosed) {
       if (exitCode === 0) {
         await translator.finish('end_turn');
+        sessions.markCompleted(sessionId, translator.usage);
+        logger.info({ messageId, sessionId, ...translator.usage }, 'messages.complete');
       } else {
-        await translator.finish('end_turn');
+        await translator.finish('error');
+        sessions.markErrored(sessionId);
+        logger.error(
+          { messageId, sessionId, exitCode, stderr: stderrData || undefined },
+          'messages.cli_error',
+        );
       }
     }
-
-    sessions.markCompleted(sessionId, translator.usage);
-    logger.info({ messageId, sessionId, ...translator.usage }, 'messages.complete');
   } catch (err) {
     sessions.markErrored(sessionId);
     logger.error({ messageId, sessionId, error: err instanceof Error ? err.message : 'Unknown' }, 'messages.error');
@@ -306,11 +355,53 @@ export function mergeTextBlocks(
 }
 
 function waitForExit(proc: import('child_process').ChildProcess): Promise<number> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (proc.exitCode !== null) {
       resolve(proc.exitCode);
       return;
     }
-    proc.once('exit', (code) => resolve(code ?? 1));
+
+    let settled = false;
+    const cleanup = () => {
+      proc.removeListener('exit', onExit);
+      proc.removeListener('close', onClose);
+      proc.removeListener('error', onError);
+      if (timeout) clearTimeout(timeout);
+    };
+
+    const onExit = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(code ?? 1);
+    };
+
+    const onClose = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(code ?? 1);
+    };
+
+    const onError = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    proc.once('exit', onExit);
+    proc.once('close', onClose);
+    proc.once('error', onError);
+
+    // Safety timeout to prevent hanging indefinitely
+    const timeoutMs = config.requestTimeout;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { proc.kill(); } catch { /* ignore */ }
+      reject(new Error(`Subprocess did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
   });
 }

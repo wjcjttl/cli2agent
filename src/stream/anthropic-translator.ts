@@ -43,7 +43,7 @@ export class AnthropicSseTranslator {
         stop_sequence: null,
         usage: {
           input_tokens: 0,
-          output_tokens: 1,
+          output_tokens: 0,
         },
       },
     });
