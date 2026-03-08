@@ -1,6 +1,8 @@
 import { createInterface } from 'readline';
 import type { Readable } from 'stream';
 import type { CliEvent } from '../types/cli-events.js';
+import type { CliAdapter } from '../adapters/types.js';
+import { logger } from '../services/logger.js';
 
 export interface NdjsonParserCallbacks {
   onEvent: (event: CliEvent) => void;
@@ -39,8 +41,10 @@ export function parseNdjsonStream(
 
 /**
  * Async generator that yields parsed CLI events from an NDJSON stream.
+ * If an adapter is provided, events are normalized through adapter.normalizeEvent().
+ * Events that the adapter returns null for are skipped.
  */
-export async function* iterateNdjsonStream(stream: Readable): AsyncGenerator<CliEvent> {
+export async function* iterateNdjsonStream(stream: Readable, adapter?: CliAdapter): AsyncGenerator<CliEvent> {
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
   for await (const line of rl) {
@@ -48,9 +52,15 @@ export async function* iterateNdjsonStream(stream: Readable): AsyncGenerator<Cli
     if (!trimmed) continue;
 
     try {
-      yield JSON.parse(trimmed) as CliEvent;
+      const raw = JSON.parse(trimmed);
+      if (adapter) {
+        const normalized = adapter.normalizeEvent(raw);
+        if (normalized) yield normalized;
+      } else {
+        yield raw as CliEvent;
+      }
     } catch {
-      // Skip unparseable lines — CLI may emit non-JSON diagnostics
+      logger.warn({ line: trimmed.slice(0, 200) }, 'ndjson.parse.error');
     }
   }
 }

@@ -34,3 +34,12 @@ export {
   HealthResponseSchema,
   type HealthResponse,
 } from './health.js';
+
+export {
+  MessagesRequestSchema,
+  type MessagesRequest,
+  MessagesResponseSchema,
+  type MessagesResponse,
+  MessagesErrorResponseSchema,
+  type MessagesErrorResponse,
+} from './messages.js';

@@ -2,6 +2,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 export const config = {
+  logLevel: (process.env.CLI2AGENT_LOG_LEVEL || 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
   port: parseInt(process.env.CLI2AGENT_PORT || '3000'),
   host: process.env.CLI2AGENT_HOST || '0.0.0.0',
   apiKey: process.env.CLI2AGENT_API_KEY || undefined,
@@ -13,6 +14,9 @@ export const config = {
 
   // Session management
   maxSessions: parseInt(process.env.CLI2AGENT_MAX_SESSIONS || '100'),
+
+  // CLI backend selection
+  cliBackend: (process.env.CLI2AGENT_CLI_BACKEND || 'claude') as 'claude' | 'codex' | 'gemini' | 'opencode' | 'kimi',
 
   // CLI defaults
   defaultModel: process.env.CLI2AGENT_DEFAULT_MODEL || undefined,

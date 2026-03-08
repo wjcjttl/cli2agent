@@ -3,10 +3,11 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { v4 as uuidv4 } from 'uuid';
 import { spawnCliProcess } from '../services/cli-process.js';
 import type { SessionManager } from '../services/session-manager.js';
-import { ProcessPool } from '../services/process-pool.js';
+import { pool } from '../services/shared-pool.js';
 import { iterateNdjsonStream } from '../stream/ndjson-parser.js';
 import { SseWriter } from '../stream/sse-writer.js';
 import { config } from '../config.js';
+import { logger } from '../services/logger.js';
 import {
   ExecuteRequestSchema,
   ExecuteResponseSchema,
@@ -15,8 +16,6 @@ import {
   type ExecuteContentBlock,
 } from '../schemas/index.js';
 import type { CliAssistantEvent, CliEvent, CliResultEvent, CliToolResultEvent } from '../types/cli-events.js';
-
-const pool = new ProcessPool(config.maxConcurrent, config.queueTimeout);
 
 export function registerExecuteRoutes(app: FastifyInstance, sessions: SessionManager): void {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -67,6 +66,8 @@ When streaming is enabled, the following events are emitted:
       const taskId = uuidv4();
       const stream = body.stream !== false; // Default to streaming
 
+      logger.info({ taskId, sessionId: session.id, promptLength: body.prompt.length, stream }, 'execute.start');
+
       // Acquire a process slot from the global pool
       try {
         await pool.acquire();
@@ -92,13 +93,14 @@ When streaming is enabled, the following events are emitted:
         sessions.registerProcess(session.id, handle);
 
         if (stream) {
-          await handleStreaming(request, reply, handle.process, taskId, session.id, sessions);
+          await handleStreaming(request, reply, handle, taskId, session.id, sessions);
         } else {
-          await handleNonStreaming(reply, handle.process, taskId, session.id, sessions);
+          await handleNonStreaming(reply, handle, taskId, session.id, sessions);
         }
       } catch (err) {
         sessions.releaseLock(session.id);
         const message = err instanceof Error ? err.message : 'Unknown error';
+        logger.error({ taskId, sessionId: session.id, err }, 'execute.error');
         return reply.status(500).send({ error: 'execution_failed', message });
       } finally {
         pool.release();
@@ -128,16 +130,18 @@ When streaming is enabled, the following events are emitted:
 async function handleStreaming(
   request: { raw: { on: (event: string, cb: () => void) => void } },
   reply: import('fastify').FastifyReply,
-  proc: import('child_process').ChildProcess,
+  handle: import('../services/cli-process.js').CliProcessHandle,
   taskId: string,
   sessionId: string,
   sessions: SessionManager,
 ): Promise<void> {
+  const proc = handle.process;
   const sse = new SseWriter(reply);
   sse.init();
 
   // Handle client disconnect
   request.raw.on('close', () => {
+    logger.warn({ taskId, sessionId }, 'execute.client.disconnect');
     sse.markClosed();
     if (!proc.killed) proc.kill('SIGTERM');
   });
@@ -159,7 +163,7 @@ async function handleStreaming(
       stderrData += chunk.toString();
     });
 
-    for await (const event of iterateNdjsonStream(proc.stdout)) {
+    for await (const event of iterateNdjsonStream(proc.stdout, handle.adapter)) {
       if (sse.isClosed) break;
       await processEventForSse(event, sse);
 
@@ -183,10 +187,12 @@ async function handleStreaming(
 
     if (!sse.isClosed) {
       if (exitCode === 0) {
+        const durationMs = Date.now() - startTime;
+        logger.info({ taskId, durationMs, turns, inputTokens: totalInputTokens, outputTokens: totalOutputTokens }, 'execute.complete');
         await sse.write('task_complete', {
           task_id: taskId,
           status: 'completed',
-          duration_ms: Date.now() - startTime,
+          duration_ms: durationMs,
           turns,
         });
       } else {
@@ -202,6 +208,7 @@ async function handleStreaming(
       output_tokens: totalOutputTokens,
     });
   } catch (err) {
+    logger.error({ taskId, sessionId, err }, 'execute.error');
     sessions.markErrored(sessionId);
     if (!sse.isClosed) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -214,11 +221,12 @@ async function handleStreaming(
 
 async function handleNonStreaming(
   reply: import('fastify').FastifyReply,
-  proc: import('child_process').ChildProcess,
+  handle: import('../services/cli-process.js').CliProcessHandle,
   taskId: string,
   sessionId: string,
   sessions: SessionManager,
 ): Promise<void> {
+  const proc = handle.process;
   const content: ExecuteContentBlock[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -233,7 +241,7 @@ async function handleNonStreaming(
   try {
     if (!proc.stdout) throw new Error('CLI process stdout not available');
 
-    for await (const event of iterateNdjsonStream(proc.stdout)) {
+    for await (const event of iterateNdjsonStream(proc.stdout, handle.adapter)) {
       collectContentBlock(event, content);
 
       if (event.type === 'assistant') {
@@ -267,16 +275,20 @@ async function handleNonStreaming(
       output_tokens: totalOutputTokens,
     });
 
+    const durationMs = Date.now() - startTime;
+    logger.info({ taskId, durationMs, turns, inputTokens: totalInputTokens, outputTokens: totalOutputTokens }, 'execute.complete');
+
     return reply.status(200).send({
       task_id: taskId,
       session_id: sessionId,
       status: exitCode === 0 ? 'completed' : 'failed',
       content,
       usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
-      duration_ms: Date.now() - startTime,
+      duration_ms: durationMs,
       turns,
     });
   } catch (err) {
+    logger.error({ taskId, sessionId, err }, 'execute.error');
     sessions.markErrored(sessionId);
     const message = err instanceof Error ? err.message : 'Unknown error';
     return reply.status(500).send({

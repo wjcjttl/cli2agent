@@ -84,7 +84,7 @@ export function registerExecuteTool(server: McpServer, sessions: SessionManager)
         });
 
         // Iterate NDJSON stream and collect content blocks
-        for await (const event of iterateNdjsonStream(handle.process.stdout)) {
+        for await (const event of iterateNdjsonStream(handle.process.stdout, handle.adapter)) {
           if (event.type === 'assistant') {
             const msg = (event as CliAssistantEvent).message;
             if (msg?.content) {
