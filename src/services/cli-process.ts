@@ -1,5 +1,5 @@
 import { execSync, spawn, type ChildProcess } from 'child_process';
-import { access } from 'fs/promises';
+import { access, readdir } from 'fs/promises';
 import { join } from 'path';
 import { config } from '../config.js';
 
@@ -94,13 +94,22 @@ export async function spawnCliProcess(options: CliSpawnOptions): Promise<CliProc
 }
 
 async function buildCliArgs(options: CliSpawnOptions): Promise<string[]> {
+  const isResume = await sessionFileExists(options.sessionId);
+
   const args: string[] = [
     '-p', options.prompt,
     '--output-format', 'stream-json',
     '--verbose',  // Required by CLI v2.1.70+ for stream-json output
-    '--session-id', options.sessionId,
     '--dangerously-skip-permissions',
   ];
+
+  // For new sessions, use --session-id to create a deterministic session file.
+  // For existing sessions, use --resume to continue the conversation.
+  if (isResume) {
+    args.push('--resume', options.sessionId);
+  } else {
+    args.push('--session-id', options.sessionId);
+  }
 
   // Check for MCP config in workspace
   const workspace = options.workspace || config.workspace;
@@ -132,6 +141,28 @@ async function buildCliArgs(options: CliSpawnOptions): Promise<string[]> {
   }
 
   return args;
+}
+
+/**
+ * Check if a session JSONL file exists in any project subdirectory.
+ * The CLI stores sessions at ~/.claude/projects/<hash>/<session-id>.jsonl.
+ */
+async function sessionFileExists(sessionId: string): Promise<boolean> {
+  const projectsDir = join(process.env.HOME || '/home/agent', '.claude', 'projects');
+  try {
+    const subdirs = await readdir(projectsDir);
+    for (const sub of subdirs) {
+      try {
+        await access(join(projectsDir, sub, `${sessionId}.jsonl`));
+        return true;
+      } catch {
+        // Not in this subdirectory
+      }
+    }
+  } catch {
+    // Projects dir doesn't exist yet
+  }
+  return false;
 }
 
 /**
