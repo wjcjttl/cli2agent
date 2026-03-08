@@ -105,6 +105,9 @@ Supports both streaming (SSE) and non-streaming modes.`,
       const messageId = generateMessageId();
       const model = body.model;
       const stream = body.stream === true;
+      // Note: max_tokens is accepted for Anthropic API compatibility but CLI backends
+      // don't support per-request token limits. We log it for observability.
+      const maxTokens = body.max_tokens;
 
       // Extract session ID from metadata or create new
       const requestedSessionId = body.metadata?.session_id;
@@ -123,8 +126,9 @@ Supports both streaming (SSE) and non-streaming modes.`,
       }
 
       const hasSession = !!requestedSessionId;
+      const isEphemeral = !requestedSessionId;
 
-      logger.info({ messageId, sessionId: session.id, model, stream, messageCount: body.messages.length }, 'messages.start');
+      logger.info({ messageId, sessionId: session.id, model, stream, maxTokens, messageCount: body.messages.length }, 'messages.start');
 
       // Try to acquire session lock
       if (!sessions.tryLock(session.id)) {
@@ -169,6 +173,11 @@ Supports both streaming (SSE) and non-streaming modes.`,
           await handleStreaming(request, reply, handle, messageId, model, session.id, sessions);
         } else {
           await handleNonStreaming(reply, handle, messageId, model, session.id, sessions);
+        }
+
+        // Clean up ephemeral sessions to prevent unbounded DB growth
+        if (isEphemeral) {
+          sessions.delete(session.id, true).catch(() => {});
         }
       } catch (err) {
         sessions.releaseLock(session.id);
@@ -223,19 +232,22 @@ async function handleStreaming(
     // Wait for process exit
     const exitCode = await waitForExit(proc);
 
-    if (!translator.isClosed) {
-      if (exitCode === 0) {
+    // Always clean up session state, even if client disconnected
+    if (exitCode === 0) {
+      if (!translator.isClosed) {
         await translator.finish('end_turn');
-        sessions.markCompleted(sessionId, translator.usage);
-        logger.info({ messageId, sessionId, ...translator.usage }, 'messages.complete');
-      } else {
-        await translator.finish('error');
-        sessions.markErrored(sessionId);
-        logger.error(
-          { messageId, sessionId, exitCode, stderr: stderrData || undefined },
-          'messages.cli_error',
-        );
       }
+      sessions.markCompleted(sessionId, translator.usage);
+      logger.info({ messageId, sessionId, ...translator.usage }, 'messages.complete');
+    } else {
+      if (!translator.isClosed) {
+        await translator.finish('end_turn');
+      }
+      sessions.markErrored(sessionId);
+      logger.error(
+        { messageId, sessionId, exitCode, stderr: stderrData || undefined },
+        'messages.cli_error',
+      );
     }
   } catch (err) {
     sessions.markErrored(sessionId);
