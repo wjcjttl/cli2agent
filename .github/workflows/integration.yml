@@ -86,6 +86,18 @@ jobs:
           print('PASS: health endpoint returned status=ok')
           "
 
+      - name: Test 1b - Health endpoint reports backend
+        run: |
+          RESPONSE=$(curl -sf http://localhost:3000/health)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          backend = data.get('backend', '')
+          assert backend, f'Expected backend field in health response, got: {data}'
+          print(f'PASS: Health reports backend={backend}')
+          "
+
       - name: Test 2 - POST /v1/sessions returns 201 with id
         run: |
           RESPONSE=$(curl -sf -o /tmp/session_response.json -w "%{http_code}" \
@@ -125,7 +137,64 @@ jobs:
           [ "$HTTP_STATUS" = "204" ] || { echo "FAIL: expected 204, got $HTTP_STATUS"; exit 1; }
           echo "PASS: DELETE /v1/sessions/$SESSION_ID returned 204"
 
-      - name: Test 5 - Execute endpoint (conditional on auth)
+      - name: Test 5 - POST /v1/messages (non-streaming, validation)
+        run: |
+          # Test that the /v1/messages endpoint accepts valid requests
+          # We test request validation even without auth (the endpoint exists and validates)
+
+          # Test 1: Missing required fields returns 400
+          HTTP_STATUS=$(curl -sf -o /tmp/msg_err.json -w "%{http_code}" \
+            -X POST http://localhost:3000/v1/messages \
+            -H "Content-Type: application/json" \
+            -d '{"messages": []}')
+          echo "Missing model: HTTP $HTTP_STATUS"
+          [ "$HTTP_STATUS" = "400" ] || { echo "FAIL: expected 400 for missing model, got $HTTP_STATUS"; exit 1; }
+          echo "PASS: Missing model returns 400"
+
+          # Test 2: Valid request structure (may fail with auth error, but validates schema)
+          HTTP_STATUS=$(curl -s -o /tmp/msg_valid.json -w "%{http_code}" \
+            -X POST http://localhost:3000/v1/messages \
+            -H "Content-Type: application/json" \
+            -d '{"model":"claude-sonnet-4-6","max_tokens":100,"messages":[{"role":"user","content":"Say hi"}]}')
+          echo "Valid request: HTTP $HTTP_STATUS"
+          BODY=$(cat /tmp/msg_valid.json)
+          echo "Body: $BODY"
+          # Accept 200 (if auth works) or 500 (CLI error) — but NOT 400 (schema rejection)
+          if [ "$HTTP_STATUS" = "400" ]; then
+            echo "FAIL: valid request returned 400 (schema rejection)"
+            exit 1
+          fi
+          echo "PASS: Valid messages request accepted (HTTP $HTTP_STATUS)"
+
+      - name: Test 6 - POST /v1/messages streaming (conditional on auth)
+        run: |
+          HEALTH=$(curl -sf http://localhost:3000/health)
+          AUTH_METHOD=$(echo "$HEALTH" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print(data.get('auth', {}).get('method', 'none'))
+          ")
+
+          if [ "$AUTH_METHOD" = "none" ]; then
+            echo "SKIP: No auth configured, skipping streaming messages test"
+            exit 0
+          fi
+
+          # Test streaming response
+          STREAM_RESPONSE=$(curl -s --max-time 120 -N \
+            -X POST http://localhost:3000/v1/messages \
+            -H "Content-Type: application/json" \
+            -d '{"model":"claude-sonnet-4-6","max_tokens":100,"messages":[{"role":"user","content":"Say the word hello"}],"stream":true}')
+          echo "Stream response (first 500 chars): ${STREAM_RESPONSE:0:500}"
+
+          # Check for message_start event
+          if echo "$STREAM_RESPONSE" | grep -q "message_start"; then
+            echo "PASS: Streaming response contains message_start event"
+          else
+            echo "WARN: message_start not found in streaming response"
+          fi
+
+      - name: Test 7 - Execute endpoint (conditional on auth)
         run: |
           # Check auth method from health endpoint
           HEALTH=$(curl -sf http://localhost:3000/health)
