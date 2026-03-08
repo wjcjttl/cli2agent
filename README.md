@@ -95,7 +95,7 @@ Tagged releases publish a multi-arch (`amd64`/`arm64`) image to GitHub Container
 docker pull ghcr.io/wjcjttl/cli2agent:latest
 
 # Or a specific version
-docker pull ghcr.io/wjcjttl/cli2agent:0.1.0
+docker pull ghcr.io/wjcjttl/cli2agent:0.2.0
 ```
 
 Run it directly:
