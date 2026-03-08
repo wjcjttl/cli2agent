@@ -13,11 +13,12 @@ import { config } from './config.js';
 import { SessionManager } from './services/session-manager.js';
 import { registerExecuteRoutes } from './routes/execute.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { registerMessageRoutes } from './routes/messages.js';
 import { detectAuthMethod, type AuthStatus } from './auth/detector.js';
 import { HealthResponseSchema } from './schemas/index.js';
 import { registerMcpRoute } from './mcp/route.js';
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: { level: config.logLevel } });
 const sessions = new SessionManager();
 
 // Wire Zod type provider compilers
@@ -59,6 +60,7 @@ await app.register(fastifySwagger, {
       { name: 'Health', description: 'Service health checks' },
       { name: 'Sessions', description: 'CLI session management' },
       { name: 'Execute', description: 'Prompt execution against Claude Code' },
+      { name: 'Messages', description: 'Anthropic Messages API compatible endpoint' },
     ],
     components: {
       securitySchemes: {
@@ -114,6 +116,7 @@ app.withTypeProvider<ZodTypeProvider>().route({
     status: 'ok',
     version: '0.2.0',
     uptime: process.uptime(),
+    backend: config.cliBackend,
     auth: {
       method: authStatus.method,
       detail: authStatus.detail,
@@ -124,6 +127,7 @@ app.withTypeProvider<ZodTypeProvider>().route({
 // Register route groups
 registerSessionRoutes(app, sessions);
 registerExecuteRoutes(app, sessions);
+registerMessageRoutes(app, sessions);
 registerMcpRoute(app, sessions, authStatus);
 
 // Graceful shutdown
@@ -140,7 +144,15 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Start server
 try {
   await app.listen({ port: config.port, host: config.host });
-  app.log.info(`cli2agent listening on ${config.host}:${config.port}`);
+  app.log.info({
+    host: config.host,
+    port: config.port,
+    logLevel: config.logLevel,
+    maxConcurrent: config.maxConcurrent,
+    maxSessions: config.maxSessions,
+    requestTimeout: config.requestTimeout,
+    workspace: config.workspace,
+  }, 'cli2agent listening');
 } catch (err) {
   app.log.error(err);
   process.exit(1);

@@ -20,11 +20,12 @@
 
 ## 功能特性
 
-- **会话管理** — 创建、列出、查看和删除基于 SQLite 的命名会话；通过 Claude Code 的 JSONL 文件实现跨请求的会话持久化
+- **多 CLI 后端支持** — 可插拔的适配器系统，支持 Claude Code、Codex、Gemini CLI、OpenCode 和 Kimi Code；通过单个环境变量切换后端
+- **会话管理** — 创建、列出、查看和删除基于 SQLite 的命名会话；通过 CLI 会话文件实现跨请求的会话持久化
 - **智能体任务执行** — 向 `POST /v1/execute` 发送提示词，通过 SSE 实时流式返回思考过程、文本、工具调用和工具结果
 - **兼容 Anthropic Messages API** — `POST /v1/messages` 接受标准 Anthropic 请求格式；可直接作为 Cline、Cursor、LangChain 和 Anthropic SDK 的后端替代
 - **Docker 优先** — 只需一条 `docker compose up` 即可启动；宿主机无需安装 Node.js 工具链
-- **代理层认证** — 可选的 `CLI2AGENT_API_KEY` 用于控制服务访问权限，与 Anthropic 凭据相互独立
+- **代理层认证** — 可选的 `CLI2AGENT_API_KEY` 用于控制服务访问权限，与上游凭据相互独立
 - **可配置并发** — 进程执行默认为串行模式；通过设置 `CLI2AGENT_MAX_CONCURRENT` 可允许并行 CLI 进程，当所有槽位繁忙时自动排队请求
 - **资源安全** — 以非 root 用户运行，强制限制 CPU/内存，并在客户端断连或超时时自动清理 CLI 进程
 
@@ -47,17 +48,16 @@
 │  └─────┬──────┘ └──────┬───────┘ │NDJSON→SSE  │ │
 │        │               │         └──────┬─────┘ │
 │  ┌─────▼───────────────▼────────────────▼─────┐ │
-│  │           CLI Process Manager              │ │
-│  │   spawn: claude -p --output-format         │ │
-│  │          stream-json                       │ │
+│  │        CLI 进程管理器 + 适配器层           │ │
+│  │   适配器将各 CLI 输出标准化为统一事件格式  │ │
 │  └────────────────────┬───────────────────────┘ │
 └───────────────────────┼──────────────────────────┘
-                        │ stdin/stdout (NDJSON)
+                        │ stdin/stdout (NDJSON/JSONL)
                         ▼
 ┌──────────────────────────────────────────────────┐
-│  Claude Code CLI  (@anthropic-ai/claude-code)    │
-│  Context management   Tool execution             │
-│  Session persistence  MCP integration            │
+│  CLI 后端（通过 CLI2AGENT_CLI_BACKEND 选择）     │
+│                                                  │
+│  Claude Code ─ Codex ─ Gemini ─ OpenCode ─ Kimi │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -201,6 +201,61 @@ docker run \
 
 ---
 
+## 支持的 CLI 后端
+
+cli2agent 通过可插拔的适配器系统支持多种 AI 编程 CLI。每个适配器负责处理其对应 CLI 的二进制文件定位、参数构建、环境变量设置和输出标准化。
+
+通过 `CLI2AGENT_CLI_BACKEND` 环境变量设置后端（默认：`claude`）。
+
+| 后端 | CLI 二进制 | 包 | 无头模式命令 | 认证方式 |
+|------|-----------|-----|-------------|---------|
+| `claude` | `claude` | `@anthropic-ai/claude-code` | `claude -p "prompt" --output-format stream-json` | `ANTHROPIC_API_KEY`、OAuth、Bedrock、Vertex |
+| `codex` | `codex` | `@openai/codex` | `codex "prompt" --json --full-auto` | `OPENAI_API_KEY` |
+| `gemini` | `gemini` | `@google/gemini-cli` | `gemini "prompt" --output-format stream-json --approval-mode=yolo` | `GEMINI_API_KEY`、Google OAuth |
+| `opencode` | `opencode` | `opencode-ai` | `opencode run "prompt" --format json` | 取决于提供商（在 opencode 配置中设置） |
+| `kimi` | `kimi` | `kimi-cli`（pip） | `kimi --print -p "prompt" --output-format stream-json --yolo` | `kimi login`（Moonshot OAuth） |
+
+### 使用方法
+
+```bash
+# 使用 Gemini CLI 作为后端
+docker run -p 3000:3000 \
+  -e CLI2AGENT_CLI_BACKEND=gemini \
+  -e GEMINI_API_KEY=... \
+  ghcr.io/wjcjttl/cli2agent:latest
+
+# 使用 Codex 作为后端
+docker run -p 3000:3000 \
+  -e CLI2AGENT_CLI_BACKEND=codex \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/wjcjttl/cli2agent:latest
+```
+
+### 适配器工作原理
+
+每个适配器实现统一接口：
+
+- **`resolveBinary()`** — 定位 CLI 二进制文件（检查环境变量覆盖、`which` 命令，最后回退到默认名称）
+- **`buildArgs()`** — 构建 CLI 特定的命令行参数（提示词、模型、会话恢复、工作目录等）
+- **`buildEnv()`** — 为子进程设置环境变量
+- **`normalizeEvent()`** — 将 CLI 特定的 NDJSON/JSONL 事件转换为 cli2agent 的标准事件格式
+
+API 接口（`/v1/execute`、`/v1/messages`、`/v1/sessions`）无论选择哪个后端都保持一致。所有输出标准化在适配器层内部透明完成。
+
+### 二进制文件路径覆盖
+
+每个适配器支持通过 `*_BIN` 环境变量指定自定义二进制文件路径：
+
+| 变量 | 后端 |
+|------|------|
+| `CLAUDE_BIN` | `claude` |
+| `CODEX_BIN` | `codex` |
+| `GEMINI_BIN` | `gemini` |
+| `OPENCODE_BIN` | `opencode` |
+| `KIMI_BIN` | `kimi` |
+
+---
+
 ## API 参考
 
 所有端点均无额外前缀（核心端点如下所列）。当设置了 `CLI2AGENT_API_KEY` 时，客户端必须通过 `x-api-key` 请求头或 `Authorization: Bearer <key>` 提供密钥。
@@ -307,6 +362,8 @@ data: {"task_id":"...","status":"completed","duration_ms":12340,"turns":3}
 
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
+| `CLI2AGENT_CLI_BACKEND` | `claude` | 使用的 CLI 后端：`claude`、`codex`、`gemini`、`opencode`、`kimi` |
+| `CLI2AGENT_LOG_LEVEL` | `info` | 服务和 Fastify 日志级别（`trace`、`debug`、`info`、`warn`、`error`、`fatal`） |
 | `CLI2AGENT_PORT` | `3000` | HTTP 服务器监听端口 |
 | `CLI2AGENT_HOST` | `0.0.0.0` | 绑定的主机/网络接口 |
 | `CLI2AGENT_API_KEY` | — | 设置后，客户端必须通过 `x-api-key` 或 `Authorization: Bearer` 提供此密钥 |

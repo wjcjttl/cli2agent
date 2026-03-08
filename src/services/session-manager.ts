@@ -4,6 +4,7 @@ import path from 'path';
 import { mkdirSync } from 'fs';
 import { config } from '../config.js';
 import { gracefulKill, type CliProcessHandle } from './cli-process.js';
+import { logger } from './logger.js';
 import type { SessionResponse } from '../types/api.js';
 
 const DB_DIR = path.join(process.env.HOME || '/home/node', '.claude');
@@ -51,6 +52,7 @@ export class SessionManager {
       VALUES (?, ?, ?, ?, 'idle', ?, ?)
     `).run(id, workspace, options.name || null, options.model || null, now, now);
 
+    logger.info({ sessionId: id, workspace, name: options.name }, 'session.create');
     return this.get(id)!;
   }
 
@@ -126,6 +128,7 @@ export class SessionManager {
     }
 
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+    logger.info({ sessionId: id, force }, 'session.delete');
     return true;
   }
 
@@ -172,14 +175,19 @@ export class SessionManager {
 
   /** Try to acquire a lock for a session. Returns false if already locked. */
   tryLock(sessionId: string): boolean {
-    if (this.locks.has(sessionId)) return false;
+    if (this.locks.has(sessionId)) {
+      logger.debug({ sessionId }, 'session.lock.busy');
+      return false;
+    }
     this.locks.add(sessionId);
+    logger.debug({ sessionId }, 'session.lock.acquire');
     return true;
   }
 
   /** Release a session lock */
   releaseLock(sessionId: string): void {
     this.locks.delete(sessionId);
+    logger.debug({ sessionId }, 'session.lock.release');
   }
 
   /** Get or create a session for the given ID */
@@ -198,6 +206,7 @@ export class SessionManager {
 
   /** Shutdown: kill all active processes */
   async shutdown(): Promise<void> {
+    logger.info({ activeSessions: this.activeProcesses.size }, 'session.shutdown');
     const kills = [...this.activeProcesses.entries()].map(async ([id, handle]) => {
       await gracefulKill(handle);
       this.activeProcesses.delete(id);
@@ -207,6 +216,7 @@ export class SessionManager {
   }
 
   private updateStatus(id: string, status: string): void {
+    logger.debug({ sessionId: id, status }, 'session.status');
     this.db.prepare('UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, new Date().toISOString(), id);
   }

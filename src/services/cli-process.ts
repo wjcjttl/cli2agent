@@ -1,7 +1,7 @@
-import { execSync, spawn, type ChildProcess } from 'child_process';
-import { access, readdir } from 'fs/promises';
-import { join } from 'path';
+import { spawn, type ChildProcess } from 'child_process';
 import { config } from '../config.js';
+import { logger } from './logger.js';
+import { getAdapter, type CliAdapter } from '../adapters/index.js';
 
 export interface CliSpawnOptions {
   prompt: string;
@@ -17,152 +17,79 @@ export interface CliProcessHandle {
   process: ChildProcess;
   sessionId: string;
   startedAt: Date;
+  adapter: CliAdapter;
   kill: (signal?: NodeJS.Signals) => void;
 }
 
-/** Resolve the full path to the `claude` binary once at startup */
-let claudePath: string | undefined;
-function resolveClaudePath(): string {
-  if (claudePath) return claudePath;
-
-  // Check env override first
-  if (process.env.CLAUDE_BIN) {
-    claudePath = process.env.CLAUDE_BIN;
-    return claudePath;
-  }
-
-  // Try to find it via shell (respects user's PATH/profile)
-  try {
-    claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
-    return claudePath;
-  } catch {
-    // Fallback: assume it's in global node_modules
-    claudePath = 'claude';
-    return claudePath;
-  }
-}
-
 /**
- * Spawn a Claude Code CLI subprocess in non-interactive streaming mode.
+ * Spawn a CLI subprocess in non-interactive streaming mode.
+ * Uses the adapter selected by CLI2AGENT_CLI_BACKEND config.
  */
 export async function spawnCliProcess(options: CliSpawnOptions): Promise<CliProcessHandle> {
-  const args = await buildCliArgs(options);
+  const adapter = getAdapter(config.cliBackend);
+  const bin = adapter.resolveBinary();
   const cwd = options.workspace || config.workspace;
-  const bin = resolveClaudePath();
+  const args = await adapter.buildArgs({
+    ...options,
+    workspace: cwd,
+  });
+  const envOverrides = adapter.buildEnv();
 
-  // Remove env vars that prevent Claude CLI from running inside another Claude session
+  // Build subprocess environment
   const env = { ...process.env };
-  delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
-  delete env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
-
-  // Support ANTHROPIC_AUTH_TOKEN as alias for ANTHROPIC_API_KEY
-  if (!env.ANTHROPIC_API_KEY && env.ANTHROPIC_AUTH_TOKEN) {
-    env.ANTHROPIC_API_KEY = env.ANTHROPIC_AUTH_TOKEN;
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
   }
+
+  logger.info({ sessionId: options.sessionId, backend: adapter.name, bin, cwd, argCount: args.length }, 'cli.spawn');
 
   const proc = spawn(bin, args, {
     cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...env,
-      // Ensure CLI doesn't try to open interactive prompts
-      CI: '1',
-      DISABLE_AUTOUPDATER: '1',
-    },
+    env,
   });
+
+  const startedAt = new Date();
 
   // Close stdin immediately — no interactive input needed
   proc.stdin.end();
 
-  // Handle spawn errors (e.g. ENOENT) by emitting on stderr and closing stdout
+  // Log stderr output at warn level
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString().trim();
+    if (text) {
+      logger.warn({ sessionId: options.sessionId, backend: adapter.name, stderr: text }, 'cli.stderr');
+    }
+  });
+
+  // Handle spawn errors (e.g. ENOENT) — emit exit so downstream waitForExit resolves
   proc.on('error', (err) => {
-    proc.stderr?.push(`${err.message}\n`);
-    proc.stdout?.push(null);
+    logger.error({ sessionId: options.sessionId, backend: adapter.name, err }, 'cli.spawn.error');
+    // Emit a synthetic exit event so waitForExit doesn't hang
+    proc.emit('exit', 1, null);
+  });
+
+  // Log process exit
+  proc.on('exit', (code, signal) => {
+    const durationMs = Date.now() - startedAt.getTime();
+    logger.info({ sessionId: options.sessionId, backend: adapter.name, code, signal, durationMs }, 'cli.exit');
   });
 
   return {
     process: proc,
     sessionId: options.sessionId,
-    startedAt: new Date(),
+    startedAt,
+    adapter,
     kill: (signal: NodeJS.Signals = 'SIGTERM') => {
       if (!proc.killed) {
         proc.kill(signal);
       }
     },
   };
-}
-
-async function buildCliArgs(options: CliSpawnOptions): Promise<string[]> {
-  const isResume = await sessionFileExists(options.sessionId);
-
-  const args: string[] = [
-    '-p', options.prompt,
-    '--output-format', 'stream-json',
-    '--verbose',  // Required by CLI v2.1.70+ for stream-json output
-    '--dangerously-skip-permissions',
-  ];
-
-  // For new sessions, use --session-id to create a deterministic session file.
-  // For existing sessions, use --resume to continue the conversation.
-  if (isResume) {
-    args.push('--resume', options.sessionId);
-  } else {
-    args.push('--session-id', options.sessionId);
-  }
-
-  // Check for MCP config in workspace
-  const workspace = options.workspace || config.workspace;
-  const mcpConfigPath = join(workspace, '.mcp.json');
-  try {
-    await access(mcpConfigPath);
-    args.push('--mcp-config', mcpConfigPath);
-  } catch {
-    // No MCP config file - continue without it
-  }
-
-  // Note: --include-partial-messages suppresses stdout in CLI v2.1.70 with stream-json.
-  // Disabled until upstream fix. Partial message events are not critical for operation.
-
-  if (options.model || config.defaultModel) {
-    args.push('--model', options.model || config.defaultModel!);
-  }
-
-  if (options.maxTurns || config.defaultMaxTurns) {
-    args.push('--max-turns', String(options.maxTurns || config.defaultMaxTurns));
-  }
-
-  if (options.allowedTools && options.allowedTools.length > 0) {
-    args.push('--allowedTools', options.allowedTools.join(' '));
-  }
-
-  if (options.systemPrompt) {
-    args.push('--system-prompt', options.systemPrompt);
-  }
-
-  return args;
-}
-
-/**
- * Check if a session JSONL file exists in any project subdirectory.
- * The CLI stores sessions at ~/.claude/projects/<hash>/<session-id>.jsonl.
- */
-async function sessionFileExists(sessionId: string): Promise<boolean> {
-  const projectsDir = join(process.env.HOME || '/home/node', '.claude', 'projects');
-  try {
-    const subdirs = await readdir(projectsDir);
-    for (const sub of subdirs) {
-      try {
-        await access(join(projectsDir, sub, `${sessionId}.jsonl`));
-        return true;
-      } catch {
-        // Not in this subdirectory
-      }
-    }
-  } catch {
-    // Projects dir doesn't exist yet
-  }
-  return false;
 }
 
 /**
