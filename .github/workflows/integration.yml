@@ -143,7 +143,7 @@ jobs:
           # We test request validation even without auth (the endpoint exists and validates)
 
           # Test 1: Missing required fields returns 400
-          HTTP_STATUS=$(curl -sf -o /tmp/msg_err.json -w "%{http_code}" \
+          HTTP_STATUS=$(curl -s -o /tmp/msg_err.json -w "%{http_code}" \
             -X POST http://localhost:3000/v1/messages \
             -H "Content-Type: application/json" \
             -d '{"messages": []}')
