@@ -54,8 +54,12 @@ export async function* iterateNdjsonStream(stream: Readable, adapter?: CliAdapte
     try {
       const raw = JSON.parse(trimmed);
       if (adapter) {
-        const normalized = adapter.normalizeEvent(raw);
-        if (normalized) yield normalized;
+        try {
+          const normalized = adapter.normalizeEvent(raw);
+          if (normalized) yield normalized;
+        } catch (normalizeErr) {
+          logger.debug({ error: normalizeErr instanceof Error ? normalizeErr.message : 'unknown' }, 'ndjson.normalize.skip');
+        }
       } else {
         yield raw as CliEvent;
       }

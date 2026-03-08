@@ -181,6 +181,9 @@ Supports both streaming (SSE) and non-streaming modes.`,
         }
       } catch (err) {
         sessions.releaseLock(session.id);
+        if (isEphemeral) {
+          sessions.delete(session.id, true).catch(() => {});
+        }
         const message = err instanceof Error ? err.message : 'Unknown error';
         logger.error({ messageId, sessionId: session.id, error: message }, 'messages.error');
         return reply.status(500).send({
@@ -300,16 +303,16 @@ async function handleNonStreaming(
       }
     }
 
-    await waitForExit(proc);
+    const exitCode = await waitForExit(proc);
 
-    // Check for CLI initialization errors
-    if (content.length === 0 && stderrData) {
+    // Check for CLI errors (non-zero exit or no content with stderr)
+    if (exitCode !== 0 || (content.length === 0 && stderrData)) {
       sessions.markErrored(sessionId);
       return reply.status(500).send({
         type: 'error' as const,
         error: {
           type: 'api_error',
-          message: `CLI failed: ${stderrData.trim()}`,
+          message: `CLI failed (exit ${exitCode})${stderrData ? ': ' + stderrData.trim() : ''}`,
         },
       });
     }
