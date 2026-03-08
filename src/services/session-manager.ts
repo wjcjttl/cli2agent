@@ -6,11 +6,8 @@ import { config } from '../config.js';
 import { gracefulKill, type CliProcessHandle } from './cli-process.js';
 import type { SessionResponse } from '../types/api.js';
 
-const DB_PATH = path.join(
-  process.env.HOME || '/home/agent',
-  '.claude',
-  'cli2agent.db',
-);
+const DB_DIR = path.join(process.env.HOME || '/home/agent', '.claude');
+const DB_PATH = path.join(DB_DIR, 'cli2agent.db');
 
 export class SessionManager {
   private db: Database.Database;
@@ -20,7 +17,7 @@ export class SessionManager {
   private locks = new Set<string>();
 
   constructor() {
-    mkdirSync(path.dirname(DB_PATH), { recursive: true });
+    mkdirSync(DB_DIR, { recursive: true });
     this.db = new Database(DB_PATH);
     this.db.pragma('journal_mode = WAL');
     this.initSchema();
