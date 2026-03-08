@@ -1,15 +1,13 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { mkdirSync } from 'fs';
 import { config } from '../config.js';
 import { gracefulKill, type CliProcessHandle } from './cli-process.js';
 import type { SessionResponse } from '../types/api.js';
 
-const DB_PATH = path.join(
-  process.env.HOME || '/home/agent',
-  '.claude',
-  'cli2agent.db',
-);
+const DB_DIR = path.join(process.env.HOME || '/home/agent', '.claude');
+const DB_PATH = path.join(DB_DIR, 'cli2agent.db');
 
 export class SessionManager {
   private db: Database.Database;
@@ -19,6 +17,7 @@ export class SessionManager {
   private locks = new Set<string>();
 
   constructor() {
+    mkdirSync(DB_DIR, { recursive: true });
     this.db = new Database(DB_PATH);
     this.db.pragma('journal_mode = WAL');
     this.initSchema();
