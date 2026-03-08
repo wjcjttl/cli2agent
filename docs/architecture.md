@@ -4,7 +4,7 @@
 
 ## 1. System Overview
 
-cli2agent is a containerized HTTP service that wraps the Claude Code CLI, exposing it via REST + SSE endpoints. It enables programmatic, agentic task execution — sending prompts to Claude Code and streaming back results including thinking, text, and tool executions.
+cli2agent is a containerized HTTP service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) via a pluggable adapter system, exposing them through REST + SSE endpoints. It enables programmatic, agentic task execution — sending prompts and streaming back results including thinking, text, and tool executions.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -20,16 +20,17 @@ cli2agent is a containerized HTTP service that wraps the Claude Code CLI, exposi
 │  └─────┬─────┘ └─────┬──────┘ └────────┬─────────┘ │
 │        │              │                 │           │
 │  ┌─────▼──────────────▼─────────────────▼─────────┐ │
-│  │         CLI Process Manager                     │ │
-│  │  spawn claude -p --output-format stream-json    │ │
+│  │    CLI Process Manager + Adapter Layer          │ │
+│  │  Each adapter normalizes CLI output into a      │ │
+│  │  common event format (CliEvent)                 │ │
 │  └─────────────────────┬───────────────────────────┘ │
 └────────────────────────┼────────────────────────────┘
-                         │ stdin/stdout (NDJSON)
+                         │ stdin/stdout (NDJSON/JSONL)
                          ▼
 ┌─────────────────────────────────────────────────────┐
-│  Claude Code CLI (@anthropic-ai/claude-code)        │
-│  - Context management    - Tool execution           │
-│  - Session persistence   - MCP integration          │
+│  CLI Backend (selected via CLI2AGENT_CLI_BACKEND)   │
+│                                                     │
+│  Claude Code ─ Codex ─ Gemini ─ OpenCode ─ Kimi    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -70,24 +71,39 @@ cli2agent/
 ├── src/
 │   ├── server.ts                 # Fastify server setup, plugin registration
 │   ├── config.ts                 # Environment-based configuration
+│   ├── adapters/                 # CLI backend adapters
+│   │   ├── types.ts              # CliAdapter interface & AdapterSpawnOptions
+│   │   ├── index.ts              # Adapter registry/factory (getAdapter)
+│   │   ├── claude.ts             # Claude Code adapter
+│   │   ├── codex.ts              # OpenAI Codex adapter
+│   │   ├── gemini.ts             # Google Gemini CLI adapter
+│   │   ├── opencode.ts           # OpenCode adapter
+│   │   └── kimi.ts               # Kimi Code adapter
 │   ├── routes/
 │   │   ├── sessions.ts           # POST/GET/DELETE /v1/sessions
 │   │   ├── execute.ts            # POST /v1/execute (agentic task API)
 │   │   └── messages.ts           # POST /v1/messages (Anthropic compat)
 │   ├── services/
 │   │   ├── session-manager.ts    # Session lifecycle, locking, cleanup
-│   │   ├── cli-process.ts        # Claude CLI subprocess spawning & management
-│   │   └── process-pool.ts       # Concurrency limits, queueing
+│   │   ├── cli-process.ts        # CLI subprocess spawning (uses adapters)
+│   │   ├── process-pool.ts       # Concurrency limits, queueing
+│   │   ├── shared-pool.ts        # Singleton ProcessPool instance
+│   │   └── logger.ts             # Shared pino logger
 │   ├── stream/
-│   │   ├── ndjson-parser.ts      # Line-by-line NDJSON parser from stdout
+│   │   ├── ndjson-parser.ts      # Line-by-line NDJSON parser (adapter-aware)
 │   │   ├── sse-writer.ts         # Format events as SSE for HTTP responses
-│   │   └── translator.ts         # CLI events → Anthropic API events (state machine)
+│   │   └── anthropic-translator.ts # CLI events → Anthropic SSE (state machine)
+│   ├── schemas/
+│   │   ├── messages.ts           # Zod schemas for /v1/messages
+│   │   ├── execute.ts            # Zod schemas for /v1/execute
+│   │   ├── session.ts            # Zod schemas for /v1/sessions
+│   │   └── health.ts             # Zod schema for /health
 │   └── types/
 │       ├── cli-events.ts         # TypeScript types for CLI NDJSON events
-│       ├── api.ts                # Request/response schemas
-│       └── anthropic.ts          # Anthropic Messages API types
+│       └── api.ts                # Shared API types
 ├── Dockerfile
 ├── docker-compose.yml
+├── vitest.config.ts              # Test configuration
 ├── package.json
 ├── tsconfig.json
 └── docs/
@@ -402,9 +418,61 @@ data: {"type":"message_stop"}
 | Exact token counts | Best-effort |
 | Model selection | Echoed but may not change behavior |
 
-## 6. CLI NDJSON Protocol
+## 6. CLI Adapter System
 
-### 6.1 CLI Invocation for Streaming
+### 6.1 Adapter Interface
+
+Every CLI backend implements the `CliAdapter` interface:
+
+```typescript
+interface CliAdapter {
+  readonly name: string;                      // e.g. "claude", "gemini"
+  resolveBinary(): string;                     // Locate the CLI binary
+  buildArgs(options: AdapterSpawnOptions): Promise<string[]>;  // CLI-specific flags
+  buildEnv(): Record<string, string | undefined>;              // Subprocess env vars
+  normalizeEvent(raw: Record<string, unknown>): CliEvent | null;  // Output normalization
+  sessionExists(sessionId: string): Promise<boolean>;  // Check for session resume
+}
+```
+
+### 6.2 Supported Backends
+
+| Backend | Binary | Headless Command | Output Format |
+|---------|--------|-----------------|---------------|
+| `claude` | `claude` | `claude -p "prompt" --output-format stream-json` | NDJSON (standard format) |
+| `codex` | `codex` | `codex "prompt" --json --full-auto` | JSONL (different event schema) |
+| `gemini` | `gemini` | `gemini "prompt" --output-format stream-json --approval-mode=yolo` | NDJSON (similar to Claude) |
+| `opencode` | `opencode` | `opencode run "prompt" --format json` | JSONL (client/server arch) |
+| `kimi` | `kimi` | `kimi --print -p "prompt" --output-format stream-json --yolo` | NDJSON (nearly identical to Claude) |
+
+### 6.3 Event Normalization
+
+Each CLI emits events in its own format. Adapters normalize them to the standard `CliEvent` types:
+
+| Standard Event | Claude | Codex | Gemini | OpenCode | Kimi |
+|---------------|--------|-------|--------|----------|------|
+| `assistant` | passthrough | `message`/`response` | `message` | `text`/`reasoning` | passthrough |
+| `tool_use` (via assistant) | passthrough | `function_call`/`tool_call` | `tool_use` | `tool_use` | passthrough |
+| `tool_result` | passthrough | `function_call_output` | `tool_result` | — | passthrough |
+| `error` | passthrough | `error` | `error` | `error` | passthrough |
+| `result` | passthrough | `completed`/`done` | `result` | — | passthrough |
+
+Claude and Kimi emit events in the standard format (passthrough). Codex, Gemini, and OpenCode require normalization.
+
+### 6.4 Adapter Selection
+
+The adapter is selected at startup via `CLI2AGENT_CLI_BACKEND` (default: `claude`). The `getAdapter()` factory creates a singleton instance:
+
+```typescript
+import { getAdapter } from './adapters/index.js';
+const adapter = getAdapter(config.cliBackend);  // Returns cached instance
+```
+
+The NDJSON parser passes each raw JSON line through `adapter.normalizeEvent()` before yielding it to route handlers. This means all downstream code (SSE writer, Anthropic translator, MCP tools) works identically regardless of backend.
+
+## 7. CLI NDJSON Protocol
+
+### 7.1 CLI Invocation for Streaming (Claude)
 
 ```bash
 claude -p \
@@ -415,7 +483,7 @@ claude -p \
   "prompt"
 ```
 
-### 6.2 NDJSON Event Types
+### 7.2 NDJSON Event Types
 
 Each line of stdout is a JSON object. Key types documented from CLI output analysis:
 
@@ -429,7 +497,7 @@ Each line of stdout is a JSON object. Key types documented from CLI output analy
 | `result` | Final result with metadata | Usage stats, stop reason |
 | `error` | Error event | Error message and type |
 
-### 6.3 Message Structure
+### 7.3 Message Structure
 
 Every NDJSON line shares common fields:
 
@@ -450,7 +518,7 @@ Every NDJSON line shares common fields:
 
 Messages form a **linked list via `parentUuid`**, enabling conversation reconstruction and fork detection.
 
-### 6.4 Bidirectional Protocol (Advanced)
+### 7.4 Bidirectional Protocol (Advanced)
 
 Using `--input-format stream-json`, the CLI accepts structured input on stdin:
 
@@ -459,11 +527,11 @@ Using `--input-format stream-json`, the CLI accepts structured input on stdin:
 
 This enables interactive permission prompts via the API (future WebSocket upgrade path).
 
-## 7. Stream Translation State Machine
+## 8. Stream Translation State Machine
 
 The translator converts CLI NDJSON events to either the native cli2agent SSE format (for `/v1/execute`) or the Anthropic-compatible SSE format (for `/v1/messages`).
 
-### 7.1 Translator State
+### 8.1 Translator State
 
 ```typescript
 interface TranslatorState {
@@ -476,7 +544,7 @@ interface TranslatorState {
 }
 ```
 
-### 7.2 Translation Rules (for `/v1/messages` compat)
+### 8.2 Translation Rules (for `/v1/messages` compat)
 
 | CLI Event | Anthropic SSE Events |
 |-----------|---------------------|
@@ -489,16 +557,16 @@ interface TranslatorState {
 | `tool_result` | Suppressed (internal to agentic loop) |
 | Stream end | `content_block_stop` + `message_delta` + `message_stop` |
 
-### 7.3 Key Design Decisions
+### 8.3 Key Design Decisions
 
 1. **Tool results are suppressed** in Anthropic compat mode — they're internal to the CLI's agentic loop
 2. **Usage stats are best-effort** — forwarded from CLI `result` event if available, otherwise zeros
 3. **Model is echoed** from request, not derived from CLI
 4. **Message ID is synthetic** — `msg_` + random hex
 
-## 8. Session Management Internals
+## 9. Session Management Internals
 
-### 8.1 Session Storage
+### 9.1 Session Storage
 
 Claude Code stores sessions as JSONL files:
 
@@ -528,7 +596,7 @@ CREATE TABLE sessions (
 );
 ```
 
-### 8.2 Session Lifecycle
+### 9.2 Session Lifecycle
 
 ```
 POST /sessions → IDLE
@@ -547,14 +615,14 @@ POST /sessions → IDLE
        DELETED
 ```
 
-### 8.3 Concurrency
+### 9.3 Concurrency
 
 - **One prompt at a time per session** — CLI maintains in-process state
 - **Queue with reject**: concurrent requests to same session get queued (max depth: 5, timeout: 30s)
 - **Per-session mutex** for process-level locking
 - Returns `409 Conflict` if session is busy and queue is full
 
-### 8.4 Process Model
+### 9.4 Process Model
 
 **Phase 1: Ephemeral (per-request)**
 - Spawn new `claude -p` process for each message
@@ -566,9 +634,9 @@ POST /sessions → IDLE
 - Feed prompts via stdin, read responses from stdout
 - Lower latency but more complex
 
-## 9. NDJSON Parser
+## 10. NDJSON Parser
 
-### 9.1 Implementation
+### 10.1 Implementation
 
 ```typescript
 import { createInterface } from 'readline';
@@ -596,7 +664,7 @@ function parseCliStream(
 }
 ```
 
-### 9.2 Backpressure
+### 10.2 Backpressure
 
 When writing SSE to the HTTP response:
 
@@ -607,7 +675,7 @@ if (!canContinue) {
 }
 ```
 
-### 9.3 Client Disconnect Cleanup
+### 10.3 Client Disconnect Cleanup
 
 ```typescript
 request.raw.on('close', () => {
@@ -619,22 +687,22 @@ request.raw.on('close', () => {
 });
 ```
 
-## 10. Security
+## 11. Security
 
-### 10.1 Container Security
+### 11.1 Container Security
 
 - Run as non-root user `node` (uid 1000)
 - `security_opt: no-new-privileges`
 - `DISABLE_AUTOUPDATER=1` for reproducible builds
 - Resource limits: 4GB memory, 4 CPUs (supports ~6 concurrent sessions)
 
-### 10.2 API Authentication
+### 11.2 API Authentication
 
 - `CLI2AGENT_API_KEY` env var sets the proxy-level auth key
 - Clients pass via `x-api-key` header or `Authorization: Bearer`
 - This is separate from `ANTHROPIC_API_KEY` (which authenticates CLI → Anthropic)
 
-### 10.3 CLI Permissions
+### 11.3 CLI Permissions
 
 - `--dangerously-skip-permissions` required for headless mode
 - Use `--allowedTools` to restrict tool access per request
@@ -643,13 +711,13 @@ request.raw.on('close', () => {
   {"permissions": {"deny": ["Read(./.env)", "Read(./secrets/**)"]}}
   ```
 
-### 10.4 Secrets Management
+### 11.4 Secrets Management
 
 - Never bake `ANTHROPIC_API_KEY` into Docker image
 - Pass via env vars at runtime or Docker secrets
 - Set `CLAUDE_CODE_ENABLE_TELEMETRY=0` if telemetry is a concern
 
-## 11. Configuration
+## 12. Configuration
 
 ```typescript
 // src/config.ts
@@ -675,7 +743,7 @@ export const config = {
 };
 ```
 
-## 12. Implementation Phases
+## 13. Implementation Phases
 
 ### Phase 1: MVP (Core Loop)
 1. Fastify server with health endpoint

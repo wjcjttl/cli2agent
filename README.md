@@ -8,7 +8,7 @@ English | [中文](README.zh-CN.md)
 ![Node.js](https://img.shields.io/badge/node-20-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 
-A self-hosted Docker service that wraps the Claude Code CLI and exposes it as HTTP + SSE API endpoints.
+A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) and exposes them as HTTP + SSE API endpoints.
 
 > **Disclaimer:** cli2agent wraps the Claude Code CLI, which is governed by
 > [Anthropic's terms of service](https://www.anthropic.com/policies/usage).
@@ -20,11 +20,12 @@ A self-hosted Docker service that wraps the Claude Code CLI and exposes it as HT
 
 ## Features
 
-- **Session management** — create, list, inspect, and delete named sessions backed by SQLite; sessions persist across requests via Claude Code's JSONL files
+- **Multi-CLI backend support** — pluggable adapter system for Claude Code, Codex, Gemini CLI, OpenCode, and Kimi Code; switch backends via a single environment variable
+- **Session management** — create, list, inspect, and delete named sessions backed by SQLite; sessions persist across requests via CLI session files
 - **Agentic task execution** — send prompts to `POST /v1/execute` and stream back thinking, text, tool use, and tool results in real time via SSE
 - **Anthropic Messages API compatibility** — `POST /v1/messages` accepts the standard Anthropic request format; drop-in backend for Cline, Cursor, LangChain, and the Anthropic SDK
 - **Docker-first** — single `docker compose up` gets you running; no Node.js toolchain required on the host
-- **Proxy-level auth** — optional `CLI2AGENT_API_KEY` to gate access to the service, separate from your Anthropic credentials
+- **Proxy-level auth** — optional `CLI2AGENT_API_KEY` to gate access to the service, separate from your upstream credentials
 - **Configurable concurrency** — process execution is sequential by default; set `CLI2AGENT_MAX_CONCURRENT` to allow parallel CLI processes, with automatic request queuing when all slots are busy
 - **Resource-safe** — runs as a non-root user, enforces CPU/memory limits, and cleans up CLI processes on client disconnect or timeout
 
@@ -47,17 +48,17 @@ A self-hosted Docker service that wraps the Claude Code CLI and exposes it as HT
 │  └─────┬──────┘ └──────┬───────┘ │NDJSON→SSE  │ │
 │        │               │         └──────┬─────┘ │
 │  ┌─────▼───────────────▼────────────────▼─────┐ │
-│  │           CLI Process Manager              │ │
-│  │   spawn: claude -p --output-format         │ │
-│  │          stream-json                       │ │
+│  │        CLI Process Manager + Adapters      │ │
+│  │   Adapter normalizes each CLI's output     │ │
+│  │   into a common NDJSON event format        │ │
 │  └────────────────────┬───────────────────────┘ │
 └───────────────────────┼──────────────────────────┘
-                        │ stdin/stdout (NDJSON)
+                        │ stdin/stdout (NDJSON/JSONL)
                         ▼
 ┌──────────────────────────────────────────────────┐
-│  Claude Code CLI  (@anthropic-ai/claude-code)    │
-│  Context management   Tool execution             │
-│  Session persistence  MCP integration            │
+│  CLI Backend (selected via CLI2AGENT_CLI_BACKEND)│
+│                                                  │
+│  Claude Code ─ Codex ─ Gemini ─ OpenCode ─ Kimi │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -201,6 +202,61 @@ If none are found, the server still starts but logs a warning and `/health` repo
 
 ---
 
+## Supported CLI Backends
+
+cli2agent supports multiple AI coding CLIs through a pluggable adapter system. Each adapter handles binary resolution, argument building, environment setup, and output normalization for its respective CLI.
+
+Set the backend via the `CLI2AGENT_CLI_BACKEND` environment variable (default: `claude`).
+
+| Backend | CLI Binary | Package | Headless Command | Auth |
+|---------|-----------|---------|-----------------|------|
+| `claude` | `claude` | `@anthropic-ai/claude-code` | `claude -p "prompt" --output-format stream-json` | `ANTHROPIC_API_KEY`, OAuth, Bedrock, Vertex |
+| `codex` | `codex` | `@openai/codex` | `codex "prompt" --json --full-auto` | `OPENAI_API_KEY` |
+| `gemini` | `gemini` | `@google/gemini-cli` | `gemini "prompt" --output-format stream-json --approval-mode=yolo` | `GEMINI_API_KEY`, Google OAuth |
+| `opencode` | `opencode` | `opencode-ai` | `opencode run "prompt" --format json` | Provider-dependent (configured in opencode config) |
+| `kimi` | `kimi` | `kimi-cli` (pip) | `kimi --print -p "prompt" --output-format stream-json --yolo` | `kimi login` (Moonshot OAuth) |
+
+### Usage
+
+```bash
+# Use Gemini CLI as the backend
+docker run -p 3000:3000 \
+  -e CLI2AGENT_CLI_BACKEND=gemini \
+  -e GEMINI_API_KEY=... \
+  ghcr.io/wjcjttl/cli2agent:latest
+
+# Use Codex as the backend
+docker run -p 3000:3000 \
+  -e CLI2AGENT_CLI_BACKEND=codex \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/wjcjttl/cli2agent:latest
+```
+
+### How adapters work
+
+Each adapter implements a common interface:
+
+- **`resolveBinary()`** — Locates the CLI binary (checks env override, `which`, then falls back to name)
+- **`buildArgs()`** — Builds CLI-specific flags (prompt, model, session resume, workspace, etc.)
+- **`buildEnv()`** — Sets environment variables for the subprocess
+- **`normalizeEvent()`** — Translates CLI-specific NDJSON/JSONL events into cli2agent's standard event format
+
+The API surface (`/v1/execute`, `/v1/messages`, `/v1/sessions`) remains identical regardless of which backend is selected. All output normalization happens transparently inside the adapter layer.
+
+### Binary override
+
+Each adapter supports a `*_BIN` environment variable to specify a custom binary path:
+
+| Variable | Backend |
+|----------|---------|
+| `CLAUDE_BIN` | `claude` |
+| `CODEX_BIN` | `codex` |
+| `GEMINI_BIN` | `gemini` |
+| `OPENCODE_BIN` | `opencode` |
+| `KIMI_BIN` | `kimi` |
+
+---
+
 ## API Reference
 
 All endpoints are prefixed with no version except the core ones listed below. The `x-api-key` header (or `Authorization: Bearer <key>`) is required when `CLI2AGENT_API_KEY` is set.
@@ -307,6 +363,8 @@ All configuration is via environment variables.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CLI2AGENT_CLI_BACKEND` | `claude` | CLI backend to use: `claude`, `codex`, `gemini`, `opencode`, `kimi` |
+| `CLI2AGENT_LOG_LEVEL` | `info` | Log level for service and Fastify logger (`trace`, `debug`, `info`, `warn`, `error`, `fatal`) |
 | `CLI2AGENT_PORT` | `3000` | Port the HTTP server listens on |
 | `CLI2AGENT_HOST` | `0.0.0.0` | Host/interface to bind |
 | `CLI2AGENT_API_KEY` | — | If set, clients must send this key via `x-api-key` or `Authorization: Bearer` |
