@@ -134,7 +134,7 @@ claude auth login
 
 # 2. Mount the token file (read-only) into the container
 docker run \
-  -v ~/.config/claude/auth.json:/home/agent/.config/claude/auth.json:ro \
+  -v ~/.config/claude/auth.json:/home/node/.config/claude/auth.json:ro \
   cli2agent
 ```
 
@@ -318,8 +318,8 @@ All configuration is via environment variables.
 | `/workspace` | Code repository Claude operates on (mount your project here) |
 | `/workspace/CLAUDE.md` | Project-level system prompt; read automatically by the CLI |
 | `/workspace/.mcp.json` | MCP server configuration |
-| `/home/agent/.claude/` | Session JSONL files and user-scope settings (persisted via named volume) |
-| `/home/agent/.config/claude/auth.json` | OAuth credentials (mount read-only if using OAuth auth) |
+| `/home/node/.claude/` | Session JSONL files and user-scope settings (persisted via named volume) |
+| `/home/node/.config/claude/auth.json` | OAuth credentials (mount read-only if using OAuth auth) |
 
 ---
 

@@ -4,10 +4,6 @@ version: "3.8"
 # 1. ANTHROPIC_BASE_URL support added for custom API endpoints (LiteLLM, etc.)
 # 2. User ID can be customized via HOST_UID/HOST_GID env vars (defaults to 1000:1000)
 # 3. For SQLite to work properly, ensure claude-data volume is writable by the container user
-#
-# KNOWN ISSUE: Claude Code CLI 2.1.71 has I/O streaming issues when run non-interactively
-# in Docker. The CLI may hang when using -p/--print mode. The cli2agent HTTP API works
-# correctly and serves as the recommended interface.
 
 services:
   cli2agent:
@@ -18,14 +14,13 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
       - DISABLE_AUTOUPDATER=1
-      - HOME=/home/agent
+      - HOME=/home/node
       - CLI2AGENT_WORKSPACE=/workspace
     volumes:
       # Target code repository
       - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
       # Claude home directory for session persistence (SQLite database stored here)
-      - claude-data:/home/agent/.claude
-    working_dir: /workspace
+      - claude-data:/home/node/.claude
     # Use host user's UID/GID for proper file permissions, fallback to 1000:1000
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     deploy:

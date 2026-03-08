@@ -61,21 +61,19 @@ RUN npm install -g @anthropic-ai/claude-code@latest
 # Disable auto-updater in containers
 ENV DISABLE_AUTOUPDATER=1
 
-# Create non-root user
-RUN groupadd -r agent && useradd -r -g agent -m -d /home/agent -s /bin/bash agent
-
-# Create workspace and .claude directories
-RUN mkdir -p /workspace && chown agent:agent /workspace
-RUN mkdir -p /home/agent/.claude && chown -R agent:agent /home/agent/.claude
+# Use existing node user (UID 1000) — matches docker-compose user: "1000:1000"
+RUN mkdir -p /workspace && chown node:node /workspace
+RUN mkdir -p /home/node/.claude && chown -R node:node /home/node/.claude
 
 # Install service
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist/ ./dist/
-RUN chown -R agent:agent /app
+RUN chown -R node:node /app
 
-USER agent
+USER node
+ENV HOME=/home/node
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
