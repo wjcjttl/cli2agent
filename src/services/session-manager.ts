@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { mkdirSync } from 'fs';
 import { config } from '../config.js';
 import { gracefulKill, type CliProcessHandle } from './cli-process.js';
 import type { SessionResponse } from '../types/api.js';
@@ -19,6 +20,7 @@ export class SessionManager {
   private locks = new Set<string>();
 
   constructor() {
+    mkdirSync(path.dirname(DB_PATH), { recursive: true });
     this.db = new Database(DB_PATH);
     this.db.pragma('journal_mode = WAL');
     this.initSchema();
