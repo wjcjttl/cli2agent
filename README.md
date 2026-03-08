@@ -87,6 +87,26 @@ To point it at an existing project:
 WORKSPACE_PATH=/path/to/your/project docker compose up
 ```
 
+### Pre-built Image (ghcr.io)
+
+Tagged releases publish a multi-arch (`amd64`/`arm64`) image to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/wjcjttl/cli2agent:latest
+
+# Or a specific version
+docker pull ghcr.io/wjcjttl/cli2agent:0.1.0
+```
+
+Run it directly:
+
+```bash
+docker run -p 3000:3000 \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -v /path/to/project:/workspace:rw \
+  ghcr.io/wjcjttl/cli2agent:latest
+```
+
 ### Local Development
 
 ```bash
