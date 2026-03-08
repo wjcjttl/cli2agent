@@ -1,0 +1,36 @@
+# Test directories
+dt_home/
+dt_workspace/
+test_home/
+test_workspace/
+live_home/
+live_workspace/
+verify_home/
+verify_workspace/
+mcp_test_home/
+mcp_test_workspace/
+test2_home/
+test2_workspace/
+
+# Node modules
+node_modules/
+
+# Git
+.git/
+
+# Claude data
+.claude/
+
+# Planning and docs
+.planning/
+*.md
+
+# Environment files
+.env*
+
+# GitHub
+.github/
+
+# Debug and scripts
+debug/
+scripts/

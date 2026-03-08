@@ -1,0 +1,82 @@
+version: "3.8"
+
+# NOTES:
+# 1. ANTHROPIC_BASE_URL support added for custom API endpoints (LiteLLM, etc.)
+# 2. User ID can be customized via HOST_UID/HOST_GID env vars (defaults to 1000:1000)
+# 3. For SQLite to work properly, ensure claude-data volume is writable by the container user
+#
+# KNOWN ISSUE: Claude Code CLI 2.1.71 has I/O streaming issues when run non-interactively
+# in Docker. The CLI may hang when using -p/--print mode. The cli2agent HTTP API works
+# correctly and serves as the recommended interface.
+
+services:
+  cli2agent:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - DISABLE_AUTOUPDATER=1
+      - HOME=/home/agent
+      - CLI2AGENT_WORKSPACE=/workspace
+    volumes:
+      # Target code repository
+      - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
+      # Claude home directory for session persistence (SQLite database stored here)
+      - claude-data:/home/agent/.claude
+    working_dir: /workspace
+    # Use host user's UID/GID for proper file permissions, fallback to 1000:1000
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  cli2agent-dev:
+    build:
+      context: .
+      target: dev
+    profiles:
+      - dev
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - CLAUDE_CODE_USE_BEDROCK=${CLAUDE_CODE_USE_BEDROCK:-}
+      - CLAUDE_CODE_SKIP_BEDROCK_AUTH=${CLAUDE_CODE_SKIP_BEDROCK_AUTH:-}
+      - ANTHROPIC_BEDROCK_BASE_URL=${ANTHROPIC_BEDROCK_BASE_URL:-}
+      - DISABLE_AUTOUPDATER=1
+      - HOME=/home/node
+      - CLI2AGENT_WORKSPACE=/workspace
+    volumes:
+      - .:/app                          # Bind-mount project root
+      - /app/node_modules               # Anonymous volume overlay (MUST be after .:/app)
+      - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
+      - claude-data:/home/node/.claude
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+
+volumes:
+  claude-data:
+    driver: local

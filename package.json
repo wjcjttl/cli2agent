@@ -1,0 +1,56 @@
+{
+  "name": "cli2agent",
+  "version": "0.1.0",
+  "description": "Expose Claude Code CLI as HTTP API endpoints for agentic task execution",
+  "license": "MIT",
+  "author": "cli2agent contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wjcjttl/cli2agent.git"
+  },
+  "homepage": "https://github.com/wjcjttl/cli2agent",
+  "bugs": {
+    "url": "https://github.com/wjcjttl/cli2agent/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "api",
+    "agent",
+    "docker",
+    "sse",
+    "streaming",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^5.3.3",
+    "fastify-type-provider-zod": "^6.1.0",
+    "openapi-types": "^12.1.3",
+    "uuid": "^11.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.13.10",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
