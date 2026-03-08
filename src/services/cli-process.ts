@@ -148,7 +148,7 @@ async function buildCliArgs(options: CliSpawnOptions): Promise<string[]> {
  * The CLI stores sessions at ~/.claude/projects/<hash>/<session-id>.jsonl.
  */
 async function sessionFileExists(sessionId: string): Promise<boolean> {
-  const projectsDir = join(process.env.HOME || '/home/agent', '.claude', 'projects');
+  const projectsDir = join(process.env.HOME || '/home/node', '.claude', 'projects');
   try {
     const subdirs = await readdir(projectsDir);
     for (const sub of subdirs) {

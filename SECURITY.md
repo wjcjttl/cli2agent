@@ -33,7 +33,7 @@ exposed to the public internet without an authentication layer.
 
 The Docker image follows security best practices:
 
-- Runs as a non-root user (`agent`, UID 999)
+- Runs as a non-root user (`node`, UID 1000)
 - Uses `--no-new-privileges` to prevent privilege escalation
 - Workspace is mounted with explicit volume binds, limiting filesystem access
 - No unnecessary capabilities are granted

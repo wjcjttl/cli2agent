@@ -115,21 +115,18 @@ RUN npm install -g @anthropic-ai/claude-code@latest
 # Disable auto-updater in containers
 ENV DISABLE_AUTOUPDATER=1
 
-# Create non-root user (matches Docker sandbox convention)
-RUN groupadd -r agent && useradd -r -g agent -m -d /home/agent -s /bin/bash agent
-
 # Create workspace and .claude directories
-RUN mkdir -p /workspace && chown agent:agent /workspace
-RUN mkdir -p /home/agent/.claude && chown -R agent:agent /home/agent/.claude
+RUN mkdir -p /workspace && chown node:node /workspace
+RUN mkdir -p /home/node/.claude && chown -R node:node /home/node/.claude
 
 # Install service
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY dist/ ./dist/
-RUN chown -R agent:agent /app
+RUN chown -R node:node /app
 
-USER agent
+USER node
 EXPOSE 3000
 
 ENTRYPOINT ["node", "dist/server.js"]
@@ -149,12 +146,12 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DISABLE_AUTOUPDATER=1
-      - HOME=/home/agent
+      - HOME=/home/node
     volumes:
       # Target code repository
       - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
       # Claude home directory (sessions, settings, history)
-      - claude-data:/home/agent/.claude
+      - claude-data:/home/node/.claude
     working_dir: /workspace
     user: "1000:1000"
     deploy:
@@ -186,11 +183,11 @@ volumes:
 | `/workspace/CLAUDE.md` | Project-level system prompt (read automatically by CLI) |
 | `/workspace/.mcp.json` | MCP server configuration |
 | `/workspace/.claude/settings.json` | Project-level settings |
-| `/home/agent/.claude/` | User-scope config, sessions, history |
-| `/home/agent/.claude/projects/-workspace/` | Session JSONL files for `/workspace` |
-| `/home/agent/.claude/settings.json` | User-scope settings |
-| `/home/agent/.claude/CLAUDE.md` | Global user instructions |
-| `/home/agent/.config/claude/auth.json` | OAuth credentials (if not using API key) |
+| `/home/node/.claude/` | User-scope config, sessions, history |
+| `/home/node/.claude/projects/-workspace/` | Session JSONL files for `/workspace` |
+| `/home/node/.claude/settings.json` | User-scope settings |
+| `/home/node/.claude/CLAUDE.md` | Global user instructions |
+| `/home/node/.config/claude/auth.json` | OAuth credentials (if not using API key) |
 
 ### 4.4 Environment Variables
 
@@ -626,7 +623,7 @@ request.raw.on('close', () => {
 
 ### 10.1 Container Security
 
-- Run as non-root user `agent` (uid 1000)
+- Run as non-root user `node` (uid 1000)
 - `security_opt: no-new-privileges`
 - `DISABLE_AUTOUPDATER=1` for reproducible builds
 - Resource limits: 4GB memory, 4 CPUs (supports ~6 concurrent sessions)

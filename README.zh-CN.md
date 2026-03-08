@@ -134,7 +134,7 @@ claude auth login
 
 # 2. 将令牌文件以只读方式挂载到容器中
 docker run \
-  -v ~/.config/claude/auth.json:/home/agent/.config/claude/auth.json:ro \
+  -v ~/.config/claude/auth.json:/home/node/.config/claude/auth.json:ro \
   cli2agent
 ```
 
@@ -318,8 +318,8 @@ data: {"task_id":"...","status":"completed","duration_ms":12340,"turns":3}
 | `/workspace` | Claude 操作的代码仓库（将项目挂载到此处） |
 | `/workspace/CLAUDE.md` | 项目级系统提示词；CLI 会自动读取 |
 | `/workspace/.mcp.json` | MCP 服务器配置 |
-| `/home/agent/.claude/` | 会话 JSONL 文件和用户级设置（通过命名卷持久化） |
-| `/home/agent/.config/claude/auth.json` | OAuth 凭据（使用 OAuth 认证时以只读方式挂载） |
+| `/home/node/.claude/` | 会话 JSONL 文件和用户级设置（通过命名卷持久化） |
+| `/home/node/.config/claude/auth.json` | OAuth 凭据（使用 OAuth 认证时以只读方式挂载） |
 
 ---
 

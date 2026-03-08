@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { gracefulKill, type CliProcessHandle } from './cli-process.js';
 import type { SessionResponse } from '../types/api.js';
 
-const DB_DIR = path.join(process.env.HOME || '/home/agent', '.claude');
+const DB_DIR = path.join(process.env.HOME || '/home/node', '.claude');
 const DB_PATH = path.join(DB_DIR, 'cli2agent.db');
 
 export class SessionManager {
