@@ -8,7 +8,7 @@ English | [中文](README.zh-CN.md)
 ![Node.js](https://img.shields.io/badge/node-20-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 
-A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) and exposes them as HTTP + SSE API endpoints. Run Claude Code headlessly with your own API key — no subscription plan required.
+A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) and exposes them as HTTP + SSE + MCP endpoints. Keep your AI-powered tools running — even when provider access gets disrupted.
 
 > **Disclaimer:** cli2agent wraps the Claude Code CLI, which is governed by
 > [Anthropic's terms of service](https://www.anthropic.com/policies/usage).
@@ -20,15 +20,15 @@ A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemi
 
 ## Why cli2agent?
 
-**Your API key works even when your plan doesn't.** Consumer plans (Claude Pro, Max) are subject to account restrictions and access changes that can disrupt your workflow overnight. API keys, AWS Bedrock, and Google Vertex AI are billed separately and operate independently — your access is governed by your API agreement, not a consumer subscription.
+**Keep your AI workflows running when access gets disrupted.** Recent ban waves from major model providers have left teams scrambling — Slack bots go silent, CI/CD pipelines break, and multi-agent orchestrators lose their backbone overnight. If you rely on Claude Code to power tools like OpenClaw, Cline, or custom integrations, a single account restriction can take everything down.
 
-cli2agent lets you:
+cli2agent is the resilience layer between your tools and AI coding agents:
 
-- **Keep using Claude Code with an API key** — no Pro/Max subscription needed. If you have an `ANTHROPIC_API_KEY`, you have access.
-- **Route through enterprise channels** — AWS Bedrock and Google Vertex AI have SLAs and are not affected by consumer plan changes. One env var switch.
-- **Switch providers instantly** — if Claude is unavailable, change `CLI2AGENT_CLI_BACKEND` to `codex`, `gemini`, `opencode`, or `kimi` and keep working.
-- **Self-host everything** — your code, your credentials, your infrastructure. No dependency on any provider's web UI or desktop app.
-- **Integrate anywhere** — expose Claude Code as an API for Cline, Cursor, LangChain, CI/CD pipelines, Slack bots, or any HTTP client.
+- **Uninterrupted access for your tools** — OpenClaw, Slack bots, CI/CD pipelines, and orchestrators call cli2agent's API. If your auth path changes, update one env var — every downstream integration keeps working.
+- **Multiple auth paths** — API key, OAuth (Claude Pro/Max), AWS Bedrock, Google Vertex AI. If one path gets restricted, switch to another without changing a line of code in your integrations.
+- **Multi-backend failover** — not just Claude. Switch `CLI2AGENT_CLI_BACKEND` to `codex`, `gemini`, `opencode`, or `kimi` and keep your workflows running on a different provider entirely.
+- **Self-hosted, fully under your control** — your infrastructure, your credentials, your uptime. No dependency on any provider's web UI, desktop app, or platform availability.
+- **One API for everything** — expose any AI coding CLI as HTTP + SSE + MCP endpoints. Build once against cli2agent, swap backends freely.
 
 ---
 
@@ -142,7 +142,7 @@ The `/health` endpoint reports which auth method was detected.
 
 ### Option 1: API Key (recommended)
 
-The simplest and most reliable method. API keys are billed per-token and operate independently of any consumer subscription plan. Your API access is unaffected by Pro/Max plan status.
+The simplest method. Works with any Anthropic API plan. A separate auth path from OAuth — useful as a fallback if your consumer plan is disrupted.
 
 ```bash
 docker run -e ANTHROPIC_API_KEY=sk-ant-api03-... cli2agent
@@ -163,7 +163,7 @@ docker run \
 
 ### Option 3: OAuth Token (Claude Pro/Max subscribers)
 
-> **Note:** OAuth tokens are tied to your consumer plan. If your plan is suspended or restricted, this method will stop working. Consider switching to Option 1 (API key) or Option 4/5 (Bedrock/Vertex) for uninterrupted access.
+> **Note:** OAuth tokens are tied to your consumer plan. If your plan is restricted, this method will stop working. cli2agent supports multiple auth methods — you can switch to API key (Option 1) or Bedrock/Vertex (Option 4/5) without changing any downstream integrations.
 
 Authenticate on your **host machine** first, then mount the token file into the container:
 
@@ -183,9 +183,7 @@ Override the token path inside the container with `CLAUDE_AUTH_TOKEN_PATH` if ne
 
 ### Option 4: Amazon Bedrock
 
-Use Claude via AWS Bedrock. Bedrock access is governed by your AWS agreement and is independent of Anthropic consumer plans — ideal for teams that need guaranteed availability.
-
-Set these environment variables:
+Use Claude via AWS Bedrock. An independent auth path governed by your AWS agreement — useful for teams that need guaranteed availability or as a fallback when other auth methods are disrupted.
 
 ```bash
 docker run \
@@ -199,7 +197,7 @@ docker run \
 
 ### Option 5: Google Vertex AI
 
-Use Claude via Google Cloud. Like Bedrock, Vertex AI access is governed by your GCP agreement and operates independently of Anthropic consumer plans.
+Use Claude via Google Cloud. Like Bedrock, an independent auth path governed by your GCP agreement.
 
 ```bash
 docker run \
