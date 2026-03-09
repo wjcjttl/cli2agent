@@ -43,3 +43,10 @@ export {
   MessagesErrorResponseSchema,
   type MessagesErrorResponse,
 } from './messages.js';
+
+export {
+  SkillItemSchema,
+  type SkillItem,
+  SkillsResponseSchema,
+  type SkillsResponse,
+} from './skills.js';

@@ -14,6 +14,7 @@ import { SessionManager } from './services/session-manager.js';
 import { registerExecuteRoutes } from './routes/execute.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerMessageRoutes } from './routes/messages.js';
+import { registerSkillRoutes } from './routes/skills.js';
 import { detectAuthMethod, type AuthStatus } from './auth/detector.js';
 import { HealthResponseSchema } from './schemas/index.js';
 import { registerMcpRoute } from './mcp/route.js';
@@ -61,6 +62,7 @@ await app.register(fastifySwagger, {
       { name: 'Sessions', description: 'CLI session management' },
       { name: 'Execute', description: 'Prompt execution against Claude Code' },
       { name: 'Messages', description: 'Anthropic Messages API compatible endpoint' },
+      { name: 'Skills', description: 'Skill and slash command management' },
     ],
     components: {
       securitySchemes: {
@@ -128,6 +130,7 @@ app.withTypeProvider<ZodTypeProvider>().route({
 registerSessionRoutes(app, sessions);
 registerExecuteRoutes(app, sessions);
 registerMessageRoutes(app, sessions);
+registerSkillRoutes(app);
 registerMcpRoute(app, sessions, authStatus);
 
 // Graceful shutdown

@@ -3,7 +3,7 @@ version: "3.8"
 # NOTES:
 # 1. ANTHROPIC_BASE_URL support added for custom API endpoints (LiteLLM, etc.)
 # 2. User ID can be customized via HOST_UID/HOST_GID env vars (defaults to 1000:1000)
-# 3. For SQLite to work properly, ensure claude-data volume is writable by the container user
+# 3. For SQLite to work properly, ensure the bind-mounted ~/.claude directory is writable by the container user
 
 services:
   cli2agent:
@@ -19,8 +19,8 @@ services:
     volumes:
       # Target code repository
       - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
-      # Claude home directory for session persistence (SQLite database stored here)
-      - claude-data:/home/node/.claude
+      # Host's Claude config — skills, commands, settings, sessions all shared
+      - ${CLAUDE_HOME:-~/.claude}:/home/node/.claude
     # Use host user's UID/GID for proper file permissions, fallback to 1000:1000
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     deploy:
@@ -61,7 +61,8 @@ services:
       - .:/app                          # Bind-mount project root
       - /app/node_modules               # Anonymous volume overlay (MUST be after .:/app)
       - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
-      - claude-data:/home/node/.claude
+      # Host's Claude config — skills, commands, settings, sessions all shared
+      - ${CLAUDE_HOME:-~/.claude}:/home/node/.claude
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     deploy:
       resources:
@@ -73,5 +74,6 @@ services:
           memory: 1G
 
 volumes:
-  claude-data:
-    driver: local
+  # Uncomment for isolated container storage (instead of host bind mount):
+  # claude-data:
+  #   driver: local
