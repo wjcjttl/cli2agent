@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/wjcjttl/cli2agent/compare/v0.3.2...v0.3.3) (2026-03-09)
+
+
+### Bug Fixes
+
+* **ci:** move Docker push into release workflow to fix GITHUB_TOKEN trigger issue ([#13](https://github.com/wjcjttl/cli2agent/issues/13)) ([42afbc7](https://github.com/wjcjttl/cli2agent/commit/42afbc7f10288cb8fcbc7861c8a03cba57dd5bfa))
+* **ci:** use GitHub App token for release-please to trigger CI on PRs ([#15](https://github.com/wjcjttl/cli2agent/issues/15)) ([3336176](https://github.com/wjcjttl/cli2agent/commit/3336176090e77ecbfcefcbdc304d2ade7264ba47))
+
 ## [0.3.2](https://github.com/wjcjttl/cli2agent/compare/v0.3.1...v0.3.2) (2026-03-09)
 
 
