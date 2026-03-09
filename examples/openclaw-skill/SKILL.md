@@ -36,9 +36,9 @@ Delegate tasks to a Claude Code instance (via cli2agent) for multi-step agentic 
 # Basic execution
 uv run {baseDir}/cli2agent_skill.py -p "Explain the architecture of this codebase"
 
-# With session persistence (multi-turn)
-uv run {baseDir}/cli2agent_skill.py -p "Read the auth module" -s my-session
-uv run {baseDir}/cli2agent_skill.py -p "Now refactor it to use dependency injection" -s my-session
+# With session persistence (multi-turn) -- first run prints session UUID to stderr
+uv run {baseDir}/cli2agent_skill.py -p "Read the auth module"
+uv run {baseDir}/cli2agent_skill.py -p "Now refactor it to use dependency injection" -s <SESSION_ID>
 
 # Untrusted mode (read-only, hardened for external input)
 uv run {baseDir}/cli2agent_skill.py -p "Analyze this PR diff: $(cat diff.txt)" --untrusted

@@ -55,7 +55,7 @@ await app.register(fastifySwagger, {
     info: {
       title: 'cli2agent API',
       description: 'Expose Claude Code CLI as HTTP API endpoints for agentic task execution',
-      version: '0.2.0',
+      version: config.version,
     },
     tags: [
       { name: 'Health', description: 'Service health checks' },
@@ -116,7 +116,7 @@ app.withTypeProvider<ZodTypeProvider>().route({
   },
   handler: async () => ({
     status: 'ok',
-    version: '0.2.0',
+    version: config.version,
     uptime: process.uptime(),
     backend: config.cliBackend,
     auth: {

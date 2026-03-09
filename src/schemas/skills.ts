@@ -4,7 +4,7 @@ export const SkillItemSchema = z.object({
   name: z.string().describe('Skill name (derived from filename)'),
   type: z.enum(['command']).describe('Skill type'),
   scope: z.enum(['user', 'workspace']).describe('Whether the skill is user-level or workspace-level'),
-  path: z.string().describe('Absolute path to the skill file'),
+  path: z.string().describe('Path to the skill file'),
 });
 
 export type SkillItem = z.infer<typeof SkillItemSchema>;

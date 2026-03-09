@@ -16,9 +16,11 @@ async function scanCommandsDir(dir: string, scope: 'user' | 'workspace'): Promis
         scope,
         path: join(dir, entry.name),
       }));
-  } catch {
-    // Directory may not exist — return empty array
-    return [];
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw err;
   }
 }
 
@@ -32,7 +34,9 @@ export async function listSkills(): Promise<SkillItem[]> {
     scanCommandsDir(workspaceCommandsDir, 'workspace'),
   ]);
 
-  return [...userSkills, ...workspaceSkills];
+  return [...userSkills, ...workspaceSkills].sort((a, b) =>
+    a.scope === b.scope ? a.name.localeCompare(b.name) : a.scope.localeCompare(b.scope),
+  );
 }
 
 export function registerSkillRoutes(app: FastifyInstance): void {

@@ -48,9 +48,9 @@ The `/v1/execute` endpoint streams results as Server-Sent Events. This is the pr
 import json
 import httpx
 
-def execute_task(client: httpx.Client, prompt: str, session_id: str = None,
-                 max_turns: int = 10, system_prompt: str = None,
-                 allowed_tools: list[str] = None) -> dict:
+def execute_task(client: httpx.Client, prompt: str, session_id: str | None = None,
+                 max_turns: int = 10, system_prompt: str | None = None,
+                 allowed_tools: list[str] | None = None) -> dict:
     body = {"prompt": prompt, "stream": True, "max_turns": max_turns}
     if session_id:
         body["session_id"] = session_id

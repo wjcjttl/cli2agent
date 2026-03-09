@@ -76,11 +76,11 @@ uv run cli2agent_skill.py -p "Explain the architecture of this codebase"
 ### Multi-turn session
 
 ```bash
-# First turn -- creates a session
-uv run cli2agent_skill.py -p "Read the auth module and summarize it" -s auth-review
+# First turn -- creates a session (prints session UUID to stderr)
+uv run cli2agent_skill.py -p "Read the auth module and summarize it"
 
-# Second turn -- resumes the session
-uv run cli2agent_skill.py -p "Now add input validation to the login function" -s auth-review
+# Second turn -- resumes the session using the UUID from the first run
+uv run cli2agent_skill.py -p "Now add input validation to the login function" -s <SESSION_ID>
 ```
 
 ### Untrusted mode (for external content)
