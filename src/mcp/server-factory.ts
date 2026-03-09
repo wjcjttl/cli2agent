@@ -8,7 +8,7 @@ import { registerSkillsTool } from './tools/skills.js';
 
 export function createMcpServer(sessions: SessionManager, authStatus: AuthStatus): McpServer {
   const server = new McpServer(
-    { name: 'cli2agent', version: '0.2.0' },
+    { name: 'cli2agent', version: '0.3.0' },
     { capabilities: { logging: {} } },
   );
 
