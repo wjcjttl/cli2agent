@@ -82,7 +82,8 @@ cli2agent/
 │   ├── routes/
 │   │   ├── sessions.ts           # POST/GET/DELETE /v1/sessions
 │   │   ├── execute.ts            # POST /v1/execute (agentic task API)
-│   │   └── messages.ts           # POST /v1/messages (Anthropic compat)
+│   │   ├── messages.ts           # POST /v1/messages (Anthropic compat)
+│   │   └── skills.ts             # GET /v1/skills
 │   ├── services/
 │   │   ├── session-manager.ts    # Session lifecycle, locking, cleanup
 │   │   ├── cli-process.ts        # CLI subprocess spawning (uses adapters)
@@ -97,7 +98,16 @@ cli2agent/
 │   │   ├── messages.ts           # Zod schemas for /v1/messages
 │   │   ├── execute.ts            # Zod schemas for /v1/execute
 │   │   ├── session.ts            # Zod schemas for /v1/sessions
-│   │   └── health.ts             # Zod schema for /health
+│   │   ├── health.ts             # Zod schema for /health
+│   │   └── skills.ts             # Zod schemas for /v1/skills
+│   ├── mcp/
+│   │   ├── route.ts              # MCP SSE transport route
+│   │   ├── server-factory.ts     # MCP server creation
+│   │   └── tools/
+│   │       ├── execute.ts        # MCP execute tool
+│   │       ├── sessions.ts       # MCP session tools
+│   │       ├── health.ts         # MCP health tool
+│   │       └── skills.ts         # MCP skills_list tool
 │   └── types/
 │       ├── cli-events.ts         # TypeScript types for CLI NDJSON events
 │       └── api.ts                # Shared API types
@@ -166,8 +176,8 @@ services:
     volumes:
       # Target code repository
       - ${WORKSPACE_PATH:-./workspace}:/workspace:rw
-      # Claude home directory (sessions, settings, history)
-      - claude-data:/home/node/.claude
+      # Host's Claude config — skills, commands, settings, sessions all shared
+      - ${CLAUDE_HOME:-~/.claude}:/home/node/.claude
     working_dir: /workspace
     user: "1000:1000"
     deploy:
@@ -187,8 +197,9 @@ services:
       - no-new-privileges:true
 
 volumes:
-  claude-data:
-    driver: local
+  # Uncomment for isolated container storage (instead of host bind mount):
+  # claude-data:
+  #   driver: local
 ```
 
 ### 4.3 Key File Paths Inside Container
@@ -200,6 +211,7 @@ volumes:
 | `/workspace/.mcp.json` | MCP server configuration |
 | `/workspace/.claude/settings.json` | Project-level settings |
 | `/home/node/.claude/` | User-scope config, sessions, history |
+| `/home/node/.claude/commands/` | User-level CLI skills/commands |
 | `/home/node/.claude/projects/-workspace/` | Session JSONL files for `/workspace` |
 | `/home/node/.claude/settings.json` | User-scope settings |
 | `/home/node/.claude/CLAUDE.md` | Global user instructions |

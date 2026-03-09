@@ -286,6 +286,12 @@ All endpoints are prefixed with no version except the core ones listed below. Th
 }
 ```
 
+### Skills
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/skills` | List installed skills (slash commands) from user and workspace directories |
+
 ### Execute (agentic)
 
 | Method | Path | Description |
@@ -352,6 +358,12 @@ Accepts the standard `messages`, `model`, `system`, `stream`, `max_tokens`, and 
 | Custom tool definitions | Not supported |
 | Vision / image inputs | Not supported |
 | Exact token counts | Best-effort |
+
+---
+
+## Skills
+
+cli2agent supports Claude Code skills (slash commands) — markdown instruction files that guide the agent's behavior during execution. Skills are discovered automatically from `~/.claude/commands/` (user-level) and `/workspace/.claude/commands/` (project-level). See the [Skills Guide](docs/skills.md) for full details, and `examples/skills/claude-code/` for ready-to-use skill templates.
 
 ---
 

@@ -1,11 +1,11 @@
 name: Docker Build & Push
 
 on:
-  push:
+  release:
+    types: [published]
+  pull_request:
     branches:
       - main
-    tags:
-      - "v*.*.*"
 
 jobs:
   docker:
@@ -40,14 +40,15 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=latest,enable=true
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
-          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'release' }}
+          # Multi-platform on release, single-platform on PR (faster validation)
+          platforms: ${{ github.event_name == 'release' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

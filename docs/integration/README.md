@@ -9,6 +9,7 @@ cli2agent exposes the Claude Code CLI as a set of HTTP + SSE API endpoints. This
 | [Session Management](sessions.md) | Create, list, inspect, delete, and fork sessions. Lifecycle management and best practices. |
 | [Agentic Execution](execute.md) | Send prompts via `POST /v1/execute`, stream SSE events, handle tool use, and manage tasks. |
 | [Anthropic Messages API Compatibility](messages.md) | Use cli2agent as a drop-in backend for Cline, Cursor, LangChain, and the Anthropic SDKs. |
+| [OpenClaw Integration](openclaw.md) | Delegate tasks from OpenClaw to cli2agent via REST API or MCP. Includes skill pre-installation and security hardening. |
 
 ## Prerequisites
 

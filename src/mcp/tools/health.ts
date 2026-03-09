@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthStatus } from '../../auth/detector.js';
+import { config } from '../../config.js';
 
 export function registerHealthTool(server: McpServer, authStatus: AuthStatus): void {
   server.tool(
@@ -12,7 +13,7 @@ export function registerHealthTool(server: McpServer, authStatus: AuthStatus): v
           type: 'text' as const,
           text: JSON.stringify({
             status: 'ok',
-            version: '0.2.0',
+            version: config.version,
             uptime: process.uptime(),
             auth: {
               method: authStatus.method,

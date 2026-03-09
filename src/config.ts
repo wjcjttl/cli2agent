@@ -1,7 +1,12 @@
+import { createRequire } from 'module';
 import { homedir } from 'os';
 import { join } from 'path';
 
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json') as { version: string };
+
 export const config = {
+  version: pkg.version,
   logLevel: (process.env.CLI2AGENT_LOG_LEVEL || 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
   port: parseInt(process.env.CLI2AGENT_PORT || '3000'),
   host: process.env.CLI2AGENT_HOST || '0.0.0.0',
