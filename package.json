@@ -1,6 +1,6 @@
 {
   "name": "cli2agent",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Expose Claude Code CLI as HTTP API endpoints for agentic task execution",
   "license": "MIT",
   "author": "cli2agent contributors",
