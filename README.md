@@ -8,13 +8,27 @@ English | [中文](README.zh-CN.md)
 ![Node.js](https://img.shields.io/badge/node-20-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 
-A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) and exposes them as HTTP + SSE API endpoints.
+A self-hosted Docker service that wraps AI coding CLIs (Claude Code, Codex, Gemini, OpenCode, Kimi) and exposes them as HTTP + SSE API endpoints. Run Claude Code headlessly with your own API key — no subscription plan required.
 
 > **Disclaimer:** cli2agent wraps the Claude Code CLI, which is governed by
 > [Anthropic's terms of service](https://www.anthropic.com/policies/usage).
 > Automating or exposing the CLI via API may not be permitted under those terms.
 > Review Anthropic's policies before use. This software is provided "as is"
 > under the MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## Why cli2agent?
+
+**Your API key works even when your plan doesn't.** Consumer plans (Claude Pro, Max) are subject to account restrictions and access changes that can disrupt your workflow overnight. API keys, AWS Bedrock, and Google Vertex AI are billed separately and operate independently — your access is governed by your API agreement, not a consumer subscription.
+
+cli2agent lets you:
+
+- **Keep using Claude Code with an API key** — no Pro/Max subscription needed. If you have an `ANTHROPIC_API_KEY`, you have access.
+- **Route through enterprise channels** — AWS Bedrock and Google Vertex AI have SLAs and are not affected by consumer plan changes. One env var switch.
+- **Switch providers instantly** — if Claude is unavailable, change `CLI2AGENT_CLI_BACKEND` to `codex`, `gemini`, `opencode`, or `kimi` and keep working.
+- **Self-host everything** — your code, your credentials, your infrastructure. No dependency on any provider's web UI or desktop app.
+- **Integrate anywhere** — expose Claude Code as an API for Cline, Cursor, LangChain, CI/CD pipelines, Slack bots, or any HTTP client.
 
 ---
 
@@ -96,7 +110,7 @@ Tagged releases publish a multi-arch (`amd64`/`arm64`) image to GitHub Container
 docker pull ghcr.io/wjcjttl/cli2agent:latest
 
 # Or a specific version
-docker pull ghcr.io/wjcjttl/cli2agent:0.2.0
+docker pull ghcr.io/wjcjttl/cli2agent:0.3.3
 ```
 
 Run it directly:
@@ -128,11 +142,13 @@ The `/health` endpoint reports which auth method was detected.
 
 ### Option 1: API Key (recommended)
 
-The simplest method. Works with any Anthropic API plan.
+The simplest and most reliable method. API keys are billed per-token and operate independently of any consumer subscription plan. Your API access is unaffected by Pro/Max plan status.
 
 ```bash
 docker run -e ANTHROPIC_API_KEY=sk-ant-api03-... cli2agent
 ```
+
+Get an API key at [console.anthropic.com](https://console.anthropic.com/).
 
 ### Option 2: Custom API endpoint (LiteLLM, OpenRouter, etc.)
 
@@ -146,6 +162,8 @@ docker run \
 ```
 
 ### Option 3: OAuth Token (Claude Pro/Max subscribers)
+
+> **Note:** OAuth tokens are tied to your consumer plan. If your plan is suspended or restricted, this method will stop working. Consider switching to Option 1 (API key) or Option 4/5 (Bedrock/Vertex) for uninterrupted access.
 
 Authenticate on your **host machine** first, then mount the token file into the container:
 
@@ -165,7 +183,9 @@ Override the token path inside the container with `CLAUDE_AUTH_TOKEN_PATH` if ne
 
 ### Option 4: Amazon Bedrock
 
-Use Claude via AWS Bedrock by setting these environment variables:
+Use Claude via AWS Bedrock. Bedrock access is governed by your AWS agreement and is independent of Anthropic consumer plans — ideal for teams that need guaranteed availability.
+
+Set these environment variables:
 
 ```bash
 docker run \
@@ -179,7 +199,7 @@ docker run \
 
 ### Option 5: Google Vertex AI
 
-Use Claude via Vertex AI:
+Use Claude via Google Cloud. Like Bedrock, Vertex AI access is governed by your GCP agreement and operates independently of Anthropic consumer plans.
 
 ```bash
 docker run \
