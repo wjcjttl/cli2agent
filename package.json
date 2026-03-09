@@ -1,7 +1,7 @@
 {
   "name": "cli2agent",
   "version": "0.3.3",
-  "description": "Expose Claude Code CLI as HTTP API endpoints for agentic task execution",
+  "description": "Self-hosted Docker service to run Claude Code headlessly with API keys. Wraps AI coding CLIs (Claude Code, Codex, Gemini) as HTTP + SSE endpoints. No subscription plan required.",
   "license": "MIT",
   "author": "cli2agent contributors",
   "repository": {
@@ -15,14 +15,23 @@
   "keywords": [
     "claude",
     "claude-code",
-    "ai",
+    "claude-code-api",
+    "claude-code-headless",
+    "claude-code-docker",
+    "claude-api-key",
+    "ai-coding-agent",
+    "self-hosted",
     "api",
     "agent",
     "docker",
     "sse",
     "streaming",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "bedrock",
+    "vertex-ai",
+    "codex",
+    "gemini-cli"
   ],
   "type": "module",
   "main": "dist/server.js",
