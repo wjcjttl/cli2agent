@@ -108,8 +108,8 @@ WORKSPACE_PATH=/path/to/your/project docker compose up
 ```bash
 docker pull ghcr.io/wjcjttl/cli2agent:latest
 
-# 或使用特定版本
-docker pull ghcr.io/wjcjttl/cli2agent:0.3.3
+# 或锁定到次版本号
+docker pull ghcr.io/wjcjttl/cli2agent:0.3
 ```
 
 直接运行：
